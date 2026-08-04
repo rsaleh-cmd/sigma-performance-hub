@@ -1,0 +1,1251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Sigma Tax Pro — Performance Hub</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body style="margin:0;">
+<div id="root">
+  <p style="font-family:sans-serif;color:#5C7A7D;padding:24px;">Loading…</p>
+</div>
+
+<script type="text/plain" id="app-source">
+const { useState, useMemo, useRef, useEffect } = React;
+
+/* ============================== SUPABASE CONNECTION ============================== */
+/* Fill in your two values from Supabase → Project Settings → API */
+const SUPABASE_URL = "https://nrtcwhjbormeaqfgaowh.supabase.co"; // e.g. "https://xxxxxxxx.supabase.co"
+const SUPABASE_ANON_KEY = "sb_publishable_luuyfJInQGLCXSR49011gw_yVcCjLuQ"; // the "anon public" key — safe to use client-side
+
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const FIELD_TO_COLUMN = {
+  hireDate: "hire_date",
+  teamLead: "team_lead",
+  pulseChecks: "pulse_checks",
+  actionPlan: "action_plan",
+  photo: "photo_url",
+};
+
+function rowToEmployee(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    role: row.role,
+    department: row.department,
+    hireDate: row.hire_date,
+    trainer: row.trainer,
+    teamLead: row.team_lead,
+    batch: row.batch,
+    status: row.status,
+    rag: row.rag,
+    photo: row.photo_url,
+    training: row.training || [],
+    assessments: row.assessments || [],
+    pulseChecks: row.pulse_checks || [],
+    qa: row.qa || [],
+    strengths: row.strengths || [],
+    weaknesses: row.weaknesses || [],
+    actionPlan: row.action_plan || [],
+  };
+}
+
+async function fetchEmployees() {
+  const { data, error } = await supabase.from("employees").select("*").order("name");
+  if (error) {
+    console.error("Failed to load employees:", error.message);
+    return [];
+  }
+  return data.map(rowToEmployee);
+}
+
+async function updateEmployeeField(id, field, value) {
+  const column = FIELD_TO_COLUMN[field] || field;
+  const { error } = await supabase.from("employees").update({ [column]: value }).eq("id", id);
+  if (error) console.error("Failed to save change:", error.message);
+  return error;
+}
+
+async function uploadEmployeePhoto(blob, employeeId) {
+  const path = `${employeeId}/${Date.now()}.jpg`;
+  const { error: uploadError } = await supabase.storage
+    .from("employee-photos")
+    .upload(path, blob, { upsert: true, contentType: "image/jpeg" });
+  if (uploadError) throw uploadError;
+  const { data } = supabase.storage.from("employee-photos").getPublicUrl(path);
+  return data.publicUrl;
+}
+
+function Icon({ size = 16, color = "currentColor", children, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style}>
+      {children}
+    </svg>
+  );
+}
+
+const LayoutDashboard = (p) => <Icon {...p}><rect x="3" y="3" width="7" height="9" /><rect x="14" y="3" width="7" height="5" /><rect x="14" y="12" width="7" height="9" /><rect x="3" y="16" width="7" height="5" /></Icon>;
+const Users = (p) => <Icon {...p}><circle cx="9" cy="8" r="3" /><path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5" /><circle cx="17.5" cy="9" r="2.3" /><path d="M15.5 14.2c2.6.3 4.5 2.3 4.5 4.8" /></Icon>;
+const Settings = (p) => <Icon {...p}><circle cx="12" cy="12" r="3.2" /><path d="M12 3v2.4M12 18.6V21M21 12h-2.4M5.4 12H3M18 6l-1.6 1.6M7.6 16.4L6 18M18 18l-1.6-1.6M7.6 7.6L6 6" /></Icon>;
+const Search = (p) => <Icon {...p}><circle cx="11" cy="11" r="6.5" /><path d="M20 20l-4.3-4.3" /></Icon>;
+const ChevronLeft = (p) => <Icon {...p}><polyline points="15 6 9 12 15 18" /></Icon>;
+const ChevronRight = (p) => <Icon {...p}><polyline points="9 6 15 12 9 18" /></Icon>;
+const ChevronDown = (p) => <Icon {...p}><polyline points="6 9 12 15 18 9" /></Icon>;
+const Pencil = (p) => <Icon {...p}><path d="M4 20l1-4L16 5l3 3L8 19l-4 1z" /></Icon>;
+const Lock = (p) => <Icon {...p}><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V7a4 4 0 018 0v4" /></Icon>;
+const Unlock = (p) => <Icon {...p}><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V7a4 4 0 017.6-1.8" /></Icon>;
+const Plus = (p) => <Icon {...p}><path d="M12 5v14M5 12h14" /></Icon>;
+const Trash2 = (p) => <Icon {...p}><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m2 0l-1 13a2 2 0 01-2 2H8a2 2 0 01-2-2L5 7h14z" /><path d="M10 11v6M14 11v6" /></Icon>;
+const TrendingUp = (p) => <Icon {...p}><polyline points="3 17 9 11 13 15 21 6" /><polyline points="15 6 21 6 21 12" /></Icon>;
+const Award = (p) => <Icon {...p}><circle cx="12" cy="8" r="5.5" /><path d="M8.2 12.8L6.5 21l5.5-3 5.5 3-1.7-8.2" /></Icon>;
+const CalendarDays = (p) => <Icon {...p}><rect x="3.5" y="5" width="17" height="16" rx="2" /><path d="M3.5 9.5h17M8 3v4M16 3v4" /></Icon>;
+const GraduationCap = (p) => <Icon {...p}><path d="M2 9l10-4.5L22 9l-10 4.5L2 9z" /><path d="M6 11v5c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5v-5" /></Icon>;
+const PhoneCall = (p) => <Icon {...p}><path d="M5 4h3l1.5 4L7.5 9.5a11 11 0 006.9 6.9L16 14.5l4 1.5v3a2 2 0 01-2.2 2A17 17 0 013 6.2 2 2 0 015 4z" /></Icon>;
+const Activity = (p) => <Icon {...p}><polyline points="3 12 8 12 10 6 14 18 16 12 21 12" /></Icon>;
+const ShieldCheck = (p) => <Icon {...p}><path d="M12 3l7 3.5v5c0 5-3 8.5-7 9.5-4-1-7-4.5-7-9.5v-5L12 3z" /><path d="M9 12.5l2 2 4-4.5" /></Icon>;
+const Sparkles = (p) => <Icon {...p}><path d="M12 3l1.2 4.3L17.5 8.5l-4.3 1.2L12 14l-1.2-4.3L6.5 8.5l4.3-1.2L12 3z" /><path d="M19 15l.6 2 2 .6-2 .6-.6 2-.6-2-2-.6 2-.6.6-2z" /></Icon>;
+const X = (p) => <Icon {...p}><path d="M6 6l12 12M18 6L6 18" /></Icon>;
+const Camera = (p) => <Icon {...p}><rect x="3" y="7" width="18" height="13" rx="2" /><path d="M8 7l1.5-2.5h5L16 7" /><circle cx="12" cy="13.5" r="3.5" /></Icon>;
+const Menu = (p) => <Icon {...p}><path d="M4 7h16M4 12h16M4 17h16" /></Icon>;
+
+
+/* ============================== SEED DATA ============================== */
+
+const STATUS_OPTIONS = ["Nesting", "Live", "At Risk", "On Leave", "Graduated"];
+const RAG_OPTIONS = ["Green", "Amber", "Red"];
+
+/* ============================== HELPERS ============================== */
+
+const ragColor = (rag) =>
+  rag === "Green" ? "var(--rag-green)" : rag === "Amber" ? "var(--rag-amber)" : "var(--rag-red)";
+
+const avg = (arr, key) => {
+  const vals = arr.map((x) => x[key]).filter((v) => typeof v === "number");
+  if (!vals.length) return null;
+  return Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10;
+};
+
+const compositeScore = (emp) => {
+  const a = avg(emp.assessments, "score");
+  const p = avg(emp.pulseChecks, "score");
+  const q = avg(emp.qa, "overall");
+  const vals = [a, p, q].filter((v) => v !== null);
+  if (!vals.length) return 0;
+  return Math.round(vals.reduce((x, y) => x + y, 0) / vals.length);
+};
+
+const initials = (name) =>
+  name.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
+
+function resizeImageToBlob(file, maxSize = 300) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        let { width, height } = img;
+        if (width > height) {
+          if (width > maxSize) { height *= maxSize / width; width = maxSize; }
+        } else {
+          if (height > maxSize) { width *= maxSize / height; height = maxSize; }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob((blob) => resolve(blob), "image/jpeg", 0.85);
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+/* ============================== SMALL PIECES ============================== */
+
+function OrbitAvatar({ photo, name, score, size = 64 }) {
+  const r = size / 2 - 5;
+  const c = 2 * Math.PI * r;
+  const pct = Math.max(0, Math.min(100, score));
+  const dash = (pct / 100) * c;
+  return (
+    <div className="orbit-avatar" style={{ width: size, height: size }}>
+      <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size}>
+        <circle cx={size / 2} cy={size / 2} r={r} className="orbit-track" />
+        <circle
+          cx={size / 2} cy={size / 2} r={r}
+          className="orbit-progress"
+          strokeDasharray={`${dash} ${c}`}
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        />
+      </svg>
+      <div className="orbit-inner">
+        {photo ? (
+          <img src={photo} alt={name} />
+        ) : (
+          <span className="orbit-initials">{initials(name)}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StatusPill({ status }) {
+  return <span className={`status-pill status-${status.replace(/\s+/g, "-").toLowerCase()}`}>{status}</span>;
+}
+
+function RagBadge({ rag }) {
+  return (
+    <span className="rag-badge" style={{ "--rag-color": ragColor(rag) }}>
+      <span className="rag-dot" />
+      {rag}
+    </span>
+  );
+}
+
+function EditableField({ label, value, onChange, editMode, type = "text", options }) {
+  return (
+    <div className="field">
+      <span className="field-label">{label}</span>
+      {editMode ? (
+        options ? (
+          <select value={value} onChange={(e) => onChange(e.target.value)} className="field-input">
+            {options.map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
+        ) : (
+          <input
+            type={type}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            className="field-input"
+          />
+        )
+      ) : (
+        <span className="field-value">{value || "—"}</span>
+      )}
+    </div>
+  );
+}
+
+/* ============================== SIDEBAR ============================== */
+
+function Sidebar({ view, setView, collapsed, setCollapsed, editMode, setEditMode, isEditor, userEmail, onSignOut }) {
+  const items = [
+    { id: "dashboard", label: "Home", icon: LayoutDashboard },
+    { id: "roster", label: "Roster", icon: Users },
+    { id: "settings", label: "Settings", icon: Settings },
+  ];
+  return (
+    <div className={`sidebar ${collapsed ? "collapsed" : ""}`}>
+      <div className="sidebar-constellation" />
+      <div className="sidebar-top">
+        <div className="brand">
+          <div className="brand-mark">Σ</div>
+          {!collapsed && (
+            <div className="brand-text">
+              <div className="brand-title">Sigma</div>
+              <div className="brand-sub">Performance Hub</div>
+            </div>
+          )}
+        </div>
+        <button className="collapse-btn" onClick={() => setCollapsed(!collapsed)}>
+          {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+        </button>
+      </div>
+
+      <nav className="sidebar-nav">
+        {items.map((it) => (
+          <button
+            key={it.id}
+            className={`nav-item ${view === it.id ? "active" : ""}`}
+            onClick={() => setView(it.id)}
+            title={it.label}
+          >
+            <it.icon size={18} />
+            {!collapsed && <span>{it.label}</span>}
+          </button>
+        ))}
+      </nav>
+
+      <div className="sidebar-bottom">
+        {isEditor && (
+          <button className={`edit-toggle ${editMode ? "on" : ""}`} onClick={() => setEditMode(!editMode)}>
+            {editMode ? <Unlock size={16} /> : <Lock size={16} />}
+            {!collapsed && <span>{editMode ? "Editing enabled" : "Preview as viewer"}</span>}
+          </button>
+        )}
+        {!collapsed && (
+          <div className="sidebar-account">
+            <div className="sidebar-account-email">{userEmail}</div>
+            <div className="sidebar-account-role">{isEditor ? "Editor" : "Viewer"}</div>
+          </div>
+        )}
+        <button className="signout-btn" onClick={onSignOut}>
+          {collapsed ? <X size={14} /> : "Sign out"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ============================== DASHBOARD ============================== */
+
+function Dashboard({ employees, onSelect }) {
+  const [query, setQuery] = useState("");
+  const filtered = employees.filter((e) =>
+    e.name.toLowerCase().includes(query.toLowerCase()) ||
+    e.department.toLowerCase().includes(query.toLowerCase())
+  );
+
+  const counts = { Green: 0, Amber: 0, Red: 0 };
+  employees.forEach((e) => counts[e.rag]++);
+  const avgComposite = Math.round(
+    employees.reduce((s, e) => s + compositeScore(e), 0) / employees.length
+  );
+
+  return (
+    <div className="page">
+      <div className="page-header">
+        <div>
+          <h1>Batch-2026-01 Overview</h1>
+          <p className="page-sub">Tracking {employees.length} hires across Support, Enrolment, Premier, and SME.</p>
+        </div>
+      </div>
+
+      <div className="stat-grid">
+        <div className="stat-card">
+          <div className="stat-icon" style={{ background: "var(--teal-900)" }}><TrendingUp size={18} color="#fff" /></div>
+          <div>
+            <div className="stat-value">{avgComposite}%</div>
+            <div className="stat-label">Avg. composite score</div>
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-icon" style={{ background: "var(--rag-green)" }}><Sparkles size={18} color="#fff" /></div>
+          <div>
+            <div className="stat-value">{counts.Green}</div>
+            <div className="stat-label">On track (Green)</div>
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-icon" style={{ background: "var(--rag-amber)" }}><Activity size={18} color="#fff" /></div>
+          <div>
+            <div className="stat-value">{counts.Amber}</div>
+            <div className="stat-label">Needs support (Amber)</div>
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-icon" style={{ background: "var(--rag-red)" }}><ShieldCheck size={18} color="#fff" /></div>
+          <div>
+            <div className="stat-value">{counts.Red}</div>
+            <div className="stat-label">At risk (Red)</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="section-row">
+        <h2>Roster</h2>
+        <div className="search-box">
+          <Search size={15} />
+          <input placeholder="Search by name or department..." value={query} onChange={(e) => setQuery(e.target.value)} />
+        </div>
+      </div>
+
+      <div className="roster-grid">
+        {filtered.map((e) => (
+          <button key={e.id} className="employee-card" onClick={() => onSelect(e.id)}>
+            <OrbitAvatar photo={e.photo} name={e.name} score={compositeScore(e)} />
+            <div className="employee-card-info">
+              <div className="employee-name">{e.name}</div>
+              <div className="employee-role">{e.role}</div>
+              <div className="employee-meta">
+                <StatusPill status={e.status} />
+                <RagBadge rag={e.rag} />
+              </div>
+            </div>
+            <div className="employee-score">{compositeScore(e)}%</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ============================== ROSTER (TABLE VIEW) ============================== */
+
+function RosterTable({ employees, onSelect }) {
+  const [filter, setFilter] = useState("All");
+  const filtered = filter === "All" ? employees : employees.filter((e) => e.rag === filter);
+
+  return (
+    <div className="page">
+      <div className="page-header">
+        <div>
+          <h1>Full Roster</h1>
+          <p className="page-sub">All active hires, sortable and filterable by status.</p>
+        </div>
+        <div className="filter-pills">
+          {["All", "Green", "Amber", "Red"].map((f) => (
+            <button key={f} className={`filter-pill ${filter === f ? "active" : ""}`} onClick={() => setFilter(f)}>
+              {f}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="table-wrap">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Name</th><th>Role</th><th>Department</th><th>Status</th>
+              <th>Avg. Assessment</th><th>Avg. Pulse</th><th>Avg. QA</th><th>RAG</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((e) => (
+              <tr key={e.id} onClick={() => onSelect(e.id)}>
+                <td className="name-cell">
+                  <OrbitAvatar photo={e.photo} name={e.name} score={compositeScore(e)} size={36} />
+                  {e.name}
+                </td>
+                <td>{e.role}</td>
+                <td>{e.department}</td>
+                <td><StatusPill status={e.status} /></td>
+                <td className="mono">{avg(e.assessments, "score") ?? "—"}%</td>
+                <td className="mono">{avg(e.pulseChecks, "score") ?? "—"}%</td>
+                <td className="mono">{avg(e.qa, "overall") ?? "—"}%</td>
+                <td><RagBadge rag={e.rag} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ============================== PROFILE VIEW ============================== */
+
+function ProfileHeader({ emp, editMode, onUpdate, onPhoto }) {
+  const fileRef = useRef(null);
+  return (
+    <div className="profile-header">
+      <div className="profile-photo-wrap">
+        <OrbitAvatar photo={emp.photo} name={emp.name} score={compositeScore(emp)} size={92} />
+        {editMode && (
+          <button className="photo-edit-btn" onClick={() => fileRef.current.click()}>
+            <Camera size={14} />
+          </button>
+        )}
+        <input
+          ref={fileRef} type="file" accept="image/*" style={{ display: "none" }}
+          onChange={async (e) => {
+            const file = e.target.files[0];
+            if (file) {
+              const blob = await resizeImageToBlob(file);
+              onPhoto(blob);
+            }
+          }}
+        />
+      </div>
+
+      <div className="profile-header-fields">
+        <div className="profile-title-row">
+          {editMode ? (
+            <input className="name-input" value={emp.name} onChange={(e) => onUpdate("name", e.target.value)} />
+          ) : (
+            <h1>{emp.name}</h1>
+          )}
+          <RagBadge rag={emp.rag} />
+        </div>
+        <div className="field-grid">
+          <EditableField label="Role / Position" value={emp.role} editMode={editMode} onChange={(v) => onUpdate("role", v)} />
+          <EditableField label="Department" value={emp.department} editMode={editMode} onChange={(v) => onUpdate("department", v)} />
+          <EditableField label="Hire Date" value={emp.hireDate} editMode={editMode} type="date" onChange={(v) => onUpdate("hireDate", v)} />
+          <EditableField label="Trainer / Coach" value={emp.trainer} editMode={editMode} onChange={(v) => onUpdate("trainer", v)} />
+          <EditableField label="Team Lead" value={emp.teamLead} editMode={editMode} onChange={(v) => onUpdate("teamLead", v)} />
+          <EditableField label="Batch" value={emp.batch} editMode={editMode} onChange={(v) => onUpdate("batch", v)} />
+          <EditableField label="Status" value={emp.status} editMode={editMode} options={STATUS_OPTIONS} onChange={(v) => onUpdate("status", v)} />
+          <EditableField label="Overall RAG" value={emp.rag} editMode={editMode} options={RAG_OPTIONS} onChange={(v) => onUpdate("rag", v)} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TabBar({ tab, setTab }) {
+  const tabs = [
+    { id: "overview", label: "Overview", icon: Award },
+    { id: "training", label: "Training", icon: GraduationCap },
+    { id: "assessments", label: "Assessments", icon: CalendarDays },
+    { id: "pulse", label: "Pulse Checks", icon: PhoneCall },
+    { id: "qa", label: "QA Alignment", icon: ShieldCheck },
+  ];
+  return (
+    <div className="tab-bar">
+      {tabs.map((t) => (
+        <button key={t.id} className={`tab-btn ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)}>
+          <t.icon size={15} />
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ListEditor({ items, onChange, editMode, placeholder }) {
+  return (
+    <div className="chip-list-editor">
+      {items.map((it, i) => (
+        <div key={i} className="chip">
+          {editMode ? (
+            <>
+              <input
+                value={it}
+                onChange={(e) => {
+                  const next = [...items];
+                  next[i] = e.target.value;
+                  onChange(next);
+                }}
+              />
+              <button onClick={() => onChange(items.filter((_, idx) => idx !== i))}><X size={12} /></button>
+            </>
+          ) : (
+            <span>{it}</span>
+          )}
+        </div>
+      ))}
+      {editMode && (
+        <button className="chip-add" onClick={() => onChange([...items, placeholder || "New item"])}>
+          <Plus size={13} /> Add
+        </button>
+      )}
+    </div>
+  );
+}
+
+function OverviewTab({ emp, editMode, onUpdate }) {
+  const aAvg = avg(emp.assessments, "score");
+  const pAvg = avg(emp.pulseChecks, "score");
+  const qAvg = avg(emp.qa, "overall");
+
+  return (
+    <div className="overview-grid">
+      <div className="summary-cards">
+        <div className="summary-card">
+          <div className="summary-label">Avg. Assessment</div>
+          <div className="summary-value">{aAvg ?? "—"}%</div>
+        </div>
+        <div className="summary-card">
+          <div className="summary-label">Avg. Pulse Check</div>
+          <div className="summary-value">{pAvg ?? "—"}%</div>
+        </div>
+        <div className="summary-card">
+          <div className="summary-label">Avg. QA Score</div>
+          <div className="summary-value">{qAvg ?? "—"}%</div>
+        </div>
+        <div className="summary-card highlight">
+          <div className="summary-label">Composite</div>
+          <div className="summary-value">{compositeScore(emp)}%</div>
+        </div>
+      </div>
+
+      <div className="two-col">
+        <div className="panel">
+          <h3>Strengths</h3>
+          <ListEditor items={emp.strengths} editMode={editMode} onChange={(v) => onUpdate("strengths", v)} placeholder="New strength" />
+        </div>
+        <div className="panel">
+          <h3>Weaknesses / Areas to Improve</h3>
+          <ListEditor items={emp.weaknesses} editMode={editMode} onChange={(v) => onUpdate("weaknesses", v)} placeholder="New area to improve" />
+        </div>
+      </div>
+
+      <div className="panel">
+        <h3>Improvement Action Plan</h3>
+        <div className="table-wrap">
+          <table className="data-table small">
+            <thead><tr><th>Action Item</th><th>Owner</th><th>Target Date</th><th>Status</th>{editMode && <th /> }</tr></thead>
+            <tbody>
+              {emp.actionPlan.map((row, i) => (
+                <tr key={i}>
+                  <td>{editMode ? <input value={row.item} onChange={(e) => {
+                    const next = [...emp.actionPlan]; next[i] = { ...row, item: e.target.value }; onUpdate("actionPlan", next);
+                  }} /> : row.item}</td>
+                  <td>{editMode ? <input value={row.owner} onChange={(e) => {
+                    const next = [...emp.actionPlan]; next[i] = { ...row, owner: e.target.value }; onUpdate("actionPlan", next);
+                  }} /> : row.owner}</td>
+                  <td className="mono">{editMode ? <input type="date" value={row.targetDate} onChange={(e) => {
+                    const next = [...emp.actionPlan]; next[i] = { ...row, targetDate: e.target.value }; onUpdate("actionPlan", next);
+                  }} /> : row.targetDate}</td>
+                  <td>{editMode ? (
+                    <select value={row.status} onChange={(e) => {
+                      const next = [...emp.actionPlan]; next[i] = { ...row, status: e.target.value }; onUpdate("actionPlan", next);
+                    }}>
+                      {["Not Started", "In Progress", "Complete"].map((s) => <option key={s}>{s}</option>)}
+                    </select>
+                  ) : <span className={`chip-status ${row.status.replace(/\s+/g, "-").toLowerCase()}`}>{row.status}</span>}</td>
+                  {editMode && <td><button className="icon-btn" onClick={() => onUpdate("actionPlan", emp.actionPlan.filter((_, idx) => idx !== i))}><Trash2 size={13} /></button></td>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {editMode && (
+            <button className="add-row-btn" onClick={() => onUpdate("actionPlan", [...emp.actionPlan, { item: "", owner: "", targetDate: "", status: "Not Started" }])}>
+              <Plus size={13} /> Add action item
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GenericTable({ rows, columns, onUpdate, editMode, addRowTemplate }) {
+  return (
+    <div className="table-wrap">
+      <table className="data-table">
+        <thead>
+          <tr>{columns.map((c) => <th key={c.key}>{c.label}</th>)}{editMode && <th />}</tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => (
+            <tr key={i}>
+              {columns.map((c) => (
+                <td key={c.key} className={c.mono ? "mono" : ""}>
+                  {editMode ? (
+                    <input
+                      type={c.type || "text"}
+                      value={row[c.key]}
+                      onChange={(e) => {
+                        const val = c.type === "number" ? Number(e.target.value) : e.target.value;
+                        const next = [...rows]; next[i] = { ...row, [c.key]: val }; onUpdate(next);
+                      }}
+                    />
+                  ) : c.type === "number" ? `${row[c.key]}%` : row[c.key]}
+                </td>
+              ))}
+              {editMode && (
+                <td><button className="icon-btn" onClick={() => onUpdate(rows.filter((_, idx) => idx !== i))}><Trash2 size={13} /></button></td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {editMode && (
+        <button className="add-row-btn" onClick={() => onUpdate([...rows, addRowTemplate])}>
+          <Plus size={13} /> Add row
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ProfileView({ emp, editMode, onUpdate, onBack }) {
+  const [tab, setTab] = useState("overview");
+
+  const update = (field, value) => onUpdate(emp.id, field, value);
+  const updatePhoto = async (blob) => {
+    try {
+      const url = await uploadEmployeePhoto(blob, emp.id);
+      onUpdate(emp.id, "photo", url);
+    } catch (err) {
+      alert("Photo upload failed: " + err.message);
+    }
+  };
+
+  return (
+    <div className="page">
+      <button className="back-btn" onClick={onBack}><ChevronLeft size={16} /> Back to roster</button>
+
+      <div className="profile-card">
+        <ProfileHeader emp={emp} editMode={editMode} onUpdate={update} onPhoto={updatePhoto} />
+        <TabBar tab={tab} setTab={setTab} />
+
+        <div className="tab-content">
+          {tab === "overview" && <OverviewTab emp={emp} editMode={editMode} onUpdate={update} />}
+
+          {tab === "training" && (
+            <GenericTable
+              rows={emp.training}
+              editMode={editMode}
+              onUpdate={(v) => update("training", v)}
+              addRowTemplate={{ date: "", topic: "", trainer: "", score: 0, notes: "" }}
+              columns={[
+                { key: "date", label: "Date", mono: true, type: "date" },
+                { key: "topic", label: "Session Topic" },
+                { key: "trainer", label: "Trainer" },
+                { key: "score", label: "Score (%)", mono: true, type: "number" },
+                { key: "notes", label: "Notes" },
+              ]}
+            />
+          )}
+
+          {tab === "assessments" && (
+            <GenericTable
+              rows={emp.assessments}
+              editMode={editMode}
+              onUpdate={(v) => update("assessments", v)}
+              addRowTemplate={{ date: "", evaluator: "", score: 0, result: "", strengths: "", improve: "" }}
+              columns={[
+                { key: "date", label: "Date", mono: true, type: "date" },
+                { key: "evaluator", label: "Evaluator" },
+                { key: "score", label: "Score (%)", mono: true, type: "number" },
+                { key: "result", label: "Result" },
+                { key: "strengths", label: "Strengths" },
+                { key: "improve", label: "Areas to Improve" },
+              ]}
+            />
+          )}
+
+          {tab === "pulse" && (
+            <GenericTable
+              rows={emp.pulseChecks}
+              editMode={editMode}
+              onUpdate={(v) => update("pulseChecks", v)}
+              addRowTemplate={{ date: "", week: 0, scenario: "", score: 0, feedback: "" }}
+              columns={[
+                { key: "date", label: "Date", mono: true, type: "date" },
+                { key: "week", label: "Week #", mono: true, type: "number" },
+                { key: "scenario", label: "Scenario" },
+                { key: "score", label: "Score (%)", mono: true, type: "number" },
+                { key: "feedback", label: "Feedback" },
+              ]}
+            />
+          )}
+
+          {tab === "qa" && (
+            <GenericTable
+              rows={emp.qa}
+              editMode={editMode}
+              onUpdate={(v) => update("qa", v)}
+              addRowTemplate={{ date: "", callId: "", overall: 0, feedback: "" }}
+              columns={[
+                { key: "date", label: "Date", mono: true, type: "date" },
+                { key: "callId", label: "Call ID", mono: true },
+                { key: "overall", label: "Overall QA Score (%)", mono: true, type: "number" },
+                { key: "feedback", label: "Feedback" },
+              ]}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================== SETTINGS (placeholder) ============================== */
+
+function SettingsView() {
+  return (
+    <div className="page">
+      <div className="page-header">
+        <div>
+          <h1>Settings</h1>
+          <p className="page-sub">Role-based permissions, batch management, and integrations will live here.</p>
+        </div>
+      </div>
+      <div className="panel placeholder-panel">
+        <ShieldCheck size={28} color="var(--gold-500)" />
+        <p>This is a placeholder for the next round — real logins, editor/viewer roles, and batch/tab management.</p>
+      </div>
+    </div>
+  );
+}
+
+/* ============================== AUTH ============================== */
+
+function LoginScreen() {
+  const [email, setEmail] = useState("");
+  const [status, setStatus] = useState("idle"); // idle | sending | sent | error
+  const [errorMsg, setErrorMsg] = useState("");
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setStatus("sending");
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: window.location.href },
+    });
+    if (error) { setStatus("error"); setErrorMsg(error.message); }
+    else setStatus("sent");
+  };
+
+  return (
+    <div className="login-screen">
+      <div className="login-constellation" />
+      <div className="login-card">
+        <div className="brand-mark login-brand-mark">Σ</div>
+        <h1>Sigma Performance Hub</h1>
+        <p>Sign in with your work email — we'll send a one-time link, no password needed.</p>
+        {status === "sent" ? (
+          <div className="login-sent">
+            Check <strong>{email}</strong> for your sign-in link, then come back to this tab.
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit}>
+            <input
+              type="email" required placeholder="you@sigmataxpro.com"
+              value={email} onChange={(e) => setEmail(e.target.value)}
+            />
+            <button type="submit" disabled={status === "sending"}>
+              {status === "sending" ? "Sending…" : "Send sign-in link"}
+            </button>
+            {status === "error" && <div className="login-error">{errorMsg}</div>}
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AuthGate() {
+  const [session, setSession] = useState(undefined); // undefined = loading, null = signed out
+  const [profile, setProfile] = useState(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session ?? null));
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, sess) => setSession(sess));
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (session) {
+      supabase.from("profiles").select("*").eq("id", session.user.id).single()
+        .then(({ data }) => setProfile(data));
+    } else {
+      setProfile(null);
+    }
+  }, [session]);
+
+  if (session === undefined) {
+    return <div className="auth-loading"><style>{CSS}</style>Loading…</div>;
+  }
+  if (!session) {
+    return <div className="auth-loading"><style>{CSS}</style><LoginScreen /></div>;
+  }
+  if (!profile) {
+    return <div className="auth-loading"><style>{CSS}</style>Setting up your account…</div>;
+  }
+
+  return <App session={session} profile={profile} />;
+}
+
+/* ============================== APP ============================== */
+
+function App({ session, profile }) {
+  const isEditor = profile.role === "editor";
+  const [employees, setEmployees] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [view, setView] = useState("dashboard");
+  const [selectedId, setSelectedId] = useState(null);
+  const [collapsed, setCollapsed] = useState(false);
+  const [editMode, setEditMode] = useState(isEditor);
+
+  useEffect(() => { setEditMode(isEditor); }, [isEditor]);
+
+  useEffect(() => {
+    let active = true;
+    fetchEmployees().then((rows) => {
+      if (active) { setEmployees(rows); setLoading(false); }
+    });
+    return () => { active = false; };
+  }, []);
+
+  const selected = useMemo(() => employees.find((e) => e.id === selectedId), [employees, selectedId]);
+
+  const handleSelect = (id) => { setSelectedId(id); setView("profile"); };
+
+  const handleUpdate = (id, field, value) => {
+    setEmployees((prev) => prev.map((e) => (e.id === id ? { ...e, [field]: value } : e)));
+    updateEmployeeField(id, field, value);
+  };
+
+  const handleSignOut = () => supabase.auth.signOut();
+
+  if (loading) {
+    return <div className="auth-loading"><style>{CSS}</style>Loading roster…</div>;
+  }
+
+  return (
+    <div className="app-root">
+      <style>{CSS}</style>
+      <Sidebar
+        view={view} setView={setView} collapsed={collapsed} setCollapsed={setCollapsed}
+        editMode={editMode} setEditMode={setEditMode} isEditor={isEditor}
+        userEmail={session.user.email} onSignOut={handleSignOut}
+      />
+      <div className="main-area">
+        <div className="topbar">
+          <div className="topbar-title">
+            {view === "dashboard" && "Home"}
+            {view === "roster" && "Roster"}
+            {view === "settings" && "Settings"}
+            {view === "profile" && selected && `Profile · ${selected.name}`}
+          </div>
+          <div className={`edit-indicator ${editMode ? "on" : ""}`}>
+            {editMode ? <Unlock size={13} /> : <Lock size={13} />}
+            {editMode ? "Editing enabled" : "View only"}
+          </div>
+        </div>
+
+        {view === "dashboard" && <Dashboard employees={employees} onSelect={handleSelect} />}
+        {view === "roster" && <RosterTable employees={employees} onSelect={handleSelect} />}
+        {view === "settings" && <SettingsView />}
+        {view === "profile" && selected && (
+          <ProfileView emp={selected} editMode={editMode} onUpdate={handleUpdate} onBack={() => setView("roster")} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ============================== CSS ============================== */
+
+const CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+:root {
+  --teal-950: #021D1F;
+  --teal-900: #04474B;
+  --teal-700: #0C6B70;
+  --gold-500: #C09F25;
+  --gold-300: #E4C765;
+  --canvas: #F3F3F3;
+  --surface: #FFFFFF;
+  --ink: #0B2426;
+  --muted: #5C7A7D;
+  --border: #E2E6E6;
+  --rag-green: #2E9E6D;
+  --rag-amber: #D08A2A;
+  --rag-red: #C0463F;
+}
+
+* { box-sizing: border-box; }
+
+.app-root {
+  display: flex;
+  min-height: 100vh;
+  background: var(--canvas);
+  font-family: 'Inter', sans-serif;
+  color: var(--ink);
+}
+
+/* ---------- SIDEBAR ---------- */
+.sidebar {
+  width: 232px;
+  background: linear-gradient(180deg, var(--teal-900) 0%, var(--teal-950) 100%);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 20px 14px;
+  position: relative;
+  overflow: hidden;
+  transition: width 0.25s ease;
+  flex-shrink: 0;
+}
+.sidebar.collapsed { width: 72px; }
+
+.sidebar-constellation {
+  position: absolute;
+  inset: 0;
+  opacity: 0.12;
+  background-image:
+    radial-gradient(circle at 20% 20%, var(--gold-300) 1px, transparent 1px),
+    radial-gradient(circle at 70% 40%, var(--gold-300) 1px, transparent 1px),
+    radial-gradient(circle at 40% 70%, var(--gold-300) 1px, transparent 1px),
+    radial-gradient(circle at 85% 80%, var(--gold-300) 1px, transparent 1px),
+    radial-gradient(circle at 10% 60%, var(--gold-300) 1px, transparent 1px);
+  background-size: 180px 180px;
+  pointer-events: none;
+  animation: drift 30s linear infinite;
+}
+@keyframes drift {
+  0% { background-position: 0 0; }
+  100% { background-position: 180px 180px; }
+}
+
+.sidebar-top { position: relative; z-index: 1; }
+.brand { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.brand-mark {
+  width: 34px; height: 34px; border-radius: 9px;
+  background: linear-gradient(135deg, var(--gold-300), var(--gold-500));
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 18px;
+  color: var(--teal-950); flex-shrink: 0;
+}
+.brand-title { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 15px; line-height: 1.2; }
+.brand-sub { font-size: 11px; color: var(--gold-300); letter-spacing: 0.03em; }
+.collapse-btn {
+  position: absolute; top: 0; right: -4px;
+  background: rgba(255,255,255,0.08); border: none; color: #fff;
+  width: 24px; height: 24px; border-radius: 6px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.collapse-btn:hover { background: rgba(255,255,255,0.16); }
+
+.sidebar-nav { margin-top: 28px; display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 1; }
+.nav-item {
+  display: flex; align-items: center; gap: 11px;
+  background: none; border: none; color: rgba(255,255,255,0.75);
+  padding: 10px 12px; border-radius: 9px; cursor: pointer;
+  font-family: 'Inter', sans-serif; font-size: 13.5px; font-weight: 500;
+  text-align: left; transition: background 0.15s, color 0.15s;
+}
+.nav-item:hover { background: rgba(255,255,255,0.08); color: #fff; }
+.nav-item.active { background: rgba(192,159,37,0.18); color: var(--gold-300); }
+
+.sidebar-bottom { position: relative; z-index: 1; }
+.edit-toggle {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.8); padding: 9px 12px; border-radius: 9px;
+  cursor: pointer; font-size: 12.5px; font-weight: 500; margin-bottom: 8px;
+}
+.edit-toggle.on { background: rgba(192,159,37,0.22); border-color: var(--gold-500); color: var(--gold-300); }
+.sidebar-note { font-size: 10.5px; color: rgba(255,255,255,0.45); line-height: 1.4; margin: 0; }
+
+/* ---------- MAIN ---------- */
+.main-area { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.topbar {
+  height: 56px; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 28px; background: var(--surface); border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.topbar-title { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 15px; color: var(--teal-900); }
+.edit-indicator {
+  display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500;
+  color: var(--muted); padding: 5px 11px; border-radius: 20px; background: var(--canvas);
+}
+.edit-indicator.on { color: var(--gold-500); background: rgba(192,159,37,0.12); }
+
+.page { padding: 28px 32px 60px; max-width: 1160px; }
+.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 22px; flex-wrap: wrap; gap: 14px; }
+.page-header h1 { font-family: 'Space Grotesk', sans-serif; font-size: 22px; margin: 0 0 4px; color: var(--teal-900); }
+.page-sub { color: var(--muted); font-size: 13.5px; margin: 0; }
+
+/* ---------- STAT CARDS ---------- */
+.stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 30px; }
+.stat-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+  padding: 16px; display: flex; align-items: center; gap: 12px;
+}
+.stat-icon { width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.stat-value { font-family: 'Space Grotesk', sans-serif; font-size: 20px; font-weight: 700; color: var(--teal-900); line-height: 1.1; }
+.stat-label { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+
+/* ---------- SEARCH / SECTION ROW ---------- */
+.section-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.section-row h2 { font-family: 'Space Grotesk', sans-serif; font-size: 16px; color: var(--teal-900); margin: 0; }
+.search-box { display: flex; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 7px 12px; color: var(--muted); }
+.search-box input { border: none; outline: none; font-size: 13px; font-family: 'Inter', sans-serif; width: 220px; background: transparent; }
+
+/* ---------- ROSTER GRID ---------- */
+.roster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
+.employee-card {
+  display: flex; align-items: center; gap: 14px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 14px; cursor: pointer; text-align: left; font-family: 'Inter', sans-serif;
+  transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+.employee-card:hover { border-color: var(--gold-500); transform: translateY(-2px); box-shadow: 0 8px 20px rgba(4,71,75,0.08); }
+.employee-card-info { flex: 1; min-width: 0; }
+.employee-name { font-weight: 600; font-size: 14px; color: var(--teal-900); }
+.employee-role { font-size: 12px; color: var(--muted); margin-top: 1px; }
+.employee-meta { display: flex; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
+.employee-score { font-family: 'IBM Plex Mono', monospace; font-weight: 500; font-size: 15px; color: var(--gold-500); }
+
+/* ---------- ORBIT AVATAR ---------- */
+.orbit-avatar { position: relative; flex-shrink: 0; }
+.orbit-track { fill: none; stroke: var(--border); stroke-width: 4; }
+.orbit-progress { fill: none; stroke: var(--gold-500); stroke-width: 4; stroke-linecap: round; transition: stroke-dasharray 0.6s ease; }
+.orbit-inner {
+  position: absolute; top: 8%; left: 8%; width: 84%; height: 84%; border-radius: 50%;
+  overflow: hidden; background: var(--teal-900); display: flex; align-items: center; justify-content: center;
+}
+.orbit-inner img { width: 100%; height: 100%; object-fit: cover; }
+.orbit-initials { color: #fff; font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 0.9em; }
+
+/* ---------- STATUS / RAG ---------- */
+.status-pill {
+  font-size: 10.5px; font-weight: 600; padding: 3px 9px; border-radius: 20px;
+  background: var(--canvas); color: var(--teal-700); text-transform: uppercase; letter-spacing: 0.03em;
+}
+.status-live { background: rgba(46,158,109,0.12); color: var(--rag-green); }
+.status-nesting { background: rgba(12,107,112,0.12); color: var(--teal-700); }
+.status-at-risk { background: rgba(192,70,63,0.12); color: var(--rag-red); }
+.status-on-leave { background: rgba(92,122,125,0.15); color: var(--muted); }
+.status-graduated { background: rgba(192,159,37,0.15); color: var(--gold-500); }
+
+.rag-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; color: var(--rag-color); }
+.rag-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--rag-color); box-shadow: 0 0 6px var(--rag-color); }
+
+/* ---------- FILTER PILLS ---------- */
+.filter-pills { display: flex; gap: 6px; }
+.filter-pill { border: 1px solid var(--border); background: var(--surface); color: var(--muted); padding: 6px 14px; border-radius: 20px; font-size: 12.5px; font-weight: 500; cursor: pointer; }
+.filter-pill.active { background: var(--teal-900); color: #fff; border-color: var(--teal-900); }
+
+/* ---------- TABLE ---------- */
+.table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table th {
+  text-align: left; background: var(--canvas); color: var(--muted); font-weight: 600; font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.03em; padding: 10px 14px; border-bottom: 1px solid var(--border);
+}
+.data-table td { padding: 10px 14px; border-bottom: 1px solid var(--border); color: var(--ink); vertical-align: middle; }
+.data-table tbody tr:last-child td { border-bottom: none; }
+.data-table tbody tr:hover { background: rgba(4,71,75,0.03); cursor: pointer; }
+.data-table.small td, .data-table.small th { padding: 8px 12px; }
+.name-cell { display: flex; align-items: center; gap: 10px; font-weight: 600; color: var(--teal-900); }
+.mono { font-family: 'IBM Plex Mono', monospace; }
+.data-table input, .data-table select { width: 100%; border: 1px solid var(--border); border-radius: 6px; padding: 5px 7px; font-family: inherit; font-size: 12.5px; }
+
+.chip-status { font-size: 10.5px; font-weight: 600; padding: 3px 8px; border-radius: 20px; background: var(--canvas); }
+.chip-status.complete { background: rgba(46,158,109,0.12); color: var(--rag-green); }
+.chip-status.in-progress { background: rgba(192,159,37,0.14); color: var(--gold-500); }
+.chip-status.not-started { background: rgba(92,122,125,0.15); color: var(--muted); }
+
+.add-row-btn, .icon-btn { display: flex; align-items: center; gap: 6px; background: none; border: none; color: var(--teal-700); font-size: 12.5px; font-weight: 500; cursor: pointer; padding: 10px 14px; }
+.add-row-btn:hover { color: var(--gold-500); }
+.icon-btn { padding: 4px; color: var(--rag-red); }
+
+/* ---------- PROFILE ---------- */
+.back-btn { display: flex; align-items: center; gap: 6px; background: none; border: none; color: var(--teal-700); font-size: 13px; font-weight: 500; cursor: pointer; margin-bottom: 16px; padding: 0; }
+.profile-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+.profile-header { display: flex; gap: 22px; padding: 26px 28px; border-bottom: 1px solid var(--border); background: linear-gradient(135deg, rgba(4,71,75,0.04), transparent); }
+.profile-photo-wrap { position: relative; flex-shrink: 0; }
+.photo-edit-btn {
+  position: absolute; bottom: -2px; right: -2px; width: 26px; height: 26px; border-radius: 50%;
+  background: var(--gold-500); border: 2px solid var(--surface); color: #fff; display: flex; align-items: center;
+  justify-content: center; cursor: pointer;
+}
+.profile-header-fields { flex: 1; min-width: 0; }
+.profile-title-row { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.profile-title-row h1 { font-family: 'Space Grotesk', sans-serif; font-size: 21px; margin: 0; color: var(--teal-900); }
+.name-input { font-family: 'Space Grotesk', sans-serif; font-size: 19px; font-weight: 600; border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; color: var(--teal-900); }
+
+.field-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px 20px; }
+.field { display: flex; flex-direction: column; gap: 3px; }
+.field-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 600; }
+.field-value { font-size: 13.5px; color: var(--ink); font-weight: 500; }
+.field-input { border: 1px solid var(--border); border-radius: 7px; padding: 5px 8px; font-size: 13px; font-family: inherit; }
+
+.tab-bar { display: flex; gap: 2px; padding: 0 28px; border-bottom: 1px solid var(--border); background: var(--surface); overflow-x: auto; }
+.tab-btn {
+  display: flex; align-items: center; gap: 7px; background: none; border: none; padding: 13px 16px;
+  font-size: 13px; font-weight: 500; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent;
+  white-space: nowrap;
+}
+.tab-btn.active { color: var(--teal-900); border-bottom-color: var(--gold-500); font-weight: 600; }
+.tab-content { padding: 24px 28px 32px; }
+
+/* ---------- OVERVIEW TAB ---------- */
+.overview-grid { display: flex; flex-direction: column; gap: 22px; }
+.summary-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.summary-card { background: var(--canvas); border-radius: 12px; padding: 14px; text-align: center; }
+.summary-card.highlight { background: linear-gradient(135deg, var(--teal-900), var(--teal-700)); color: #fff; }
+.summary-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); font-weight: 600; }
+.summary-card.highlight .summary-label { color: rgba(255,255,255,0.7); }
+.summary-value { font-family: 'Space Grotesk', sans-serif; font-size: 22px; font-weight: 700; color: var(--teal-900); margin-top: 4px; }
+.summary-card.highlight .summary-value { color: var(--gold-300); }
+
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.panel { background: var(--canvas); border-radius: 12px; padding: 16px; }
+.panel h3 { font-family: 'Space Grotesk', sans-serif; font-size: 13.5px; margin: 0 0 12px; color: var(--teal-900); }
+.placeholder-panel { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; padding: 40px; color: var(--muted); font-size: 13px; }
+
+.chip-list-editor { display: flex; flex-direction: column; gap: 7px; }
+.chip { display: flex; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; font-size: 12.5px; }
+.chip input { flex: 1; border: none; outline: none; font-size: 12.5px; font-family: inherit; background: transparent; }
+.chip button { background: none; border: none; color: var(--rag-red); cursor: pointer; display: flex; }
+.chip-add { display: flex; align-items: center; gap: 6px; background: none; border: 1px dashed var(--border); border-radius: 8px; padding: 7px 10px; font-size: 12px; color: var(--teal-700); cursor: pointer; justify-content: center; }
+
+/* ---------- AUTH / LOGIN ---------- */
+.auth-loading {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: var(--canvas); color: var(--muted); font-family: 'Inter', sans-serif; font-size: 14px;
+}
+.login-screen {
+  position: relative; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(180deg, var(--teal-900) 0%, var(--teal-950) 100%); overflow: hidden;
+}
+.login-constellation {
+  position: absolute; inset: 0; opacity: 0.12;
+  background-image:
+    radial-gradient(circle at 20% 20%, var(--gold-300) 1px, transparent 1px),
+    radial-gradient(circle at 70% 40%, var(--gold-300) 1px, transparent 1px),
+    radial-gradient(circle at 40% 70%, var(--gold-300) 1px, transparent 1px),
+    radial-gradient(circle at 85% 80%, var(--gold-300) 1px, transparent 1px);
+  background-size: 180px 180px; animation: drift 30s linear infinite;
+}
+.login-card {
+  position: relative; z-index: 1; background: var(--surface); border-radius: 18px; padding: 34px 30px;
+  width: 320px; text-align: center; box-shadow: 0 24px 60px rgba(0,0,0,0.3);
+}
+.login-brand-mark { margin: 0 auto 16px; }
+.login-card h1 { font-family: 'Space Grotesk', sans-serif; font-size: 18px; color: var(--teal-900); margin: 0 0 8px; }
+.login-card p { font-size: 12.5px; color: var(--muted); margin: 0 0 20px; line-height: 1.5; }
+.login-card form { display: flex; flex-direction: column; gap: 10px; }
+.login-card input {
+  border: 1px solid var(--border); border-radius: 9px; padding: 10px 12px; font-size: 13.5px; font-family: inherit;
+}
+.login-card button {
+  border: none; border-radius: 9px; padding: 11px; background: var(--gold-500); color: var(--teal-950);
+  font-weight: 700; font-size: 13.5px; cursor: pointer;
+}
+.login-card button:disabled { opacity: 0.6; cursor: default; }
+.login-error { color: var(--rag-red); font-size: 12px; }
+.login-sent { background: rgba(46,158,109,0.1); color: var(--rag-green); border-radius: 9px; padding: 12px; font-size: 13px; line-height: 1.5; }
+
+/* ---------- SIDEBAR ACCOUNT BLOCK ---------- */
+.sidebar-account { padding: 8px 12px; margin-bottom: 8px; }
+.sidebar-account-email { font-size: 11.5px; color: rgba(255,255,255,0.85); word-break: break-all; }
+.sidebar-account-role { font-size: 10.5px; color: var(--gold-300); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; margin-top: 2px; }
+.signout-btn {
+  width: 100%; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: rgba(255,255,255,0.75);
+  padding: 8px 12px; border-radius: 9px; font-size: 12px; font-weight: 500; cursor: pointer;
+}
+.signout-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+
+@media (max-width: 900px) {
+  .stat-grid { grid-template-columns: repeat(2, 1fr); }
+  .field-grid { grid-template-columns: repeat(2, 1fr); }
+  .two-col { grid-template-columns: 1fr; }
+  .summary-cards { grid-template-columns: repeat(2, 1fr); }
+}
+`;
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<AuthGate />);
+</script>
+
+<script>
+  (function () {
+    var source = document.getElementById("app-source").textContent;
+    try {
+      var output = Babel.transform(source, {
+        presets: [["react", { runtime: "classic" }]]
+      }).code;
+      new Function("React", "ReactDOM", "document", "window", output)(
+        window.React, window.ReactDOM, document, window
+      );
+    } catch (err) {
+      document.getElementById("root").innerHTML =
+        "<pre style='padding:24px;color:#C0463F;font-family:monospace;white-space:pre-wrap;'>" +
+        "Something failed to load:\n" + (err && err.message ? err.message : err) +
+        "</pre>";
+      console.error(err);
+    }
+  })();
+</script>
+</body>
+</html>
