@@ -71,6 +71,36 @@ async function updateEmployeeField(id, field, value) {
   return error;
 }
 
+async function insertEmployee(fields) {
+  const row = {
+    name: fields.name || "New Hire",
+    role: fields.role || "",
+    department: fields.department || "",
+    hire_date: fields.hireDate || null,
+    trainer: fields.trainer || "",
+    team_lead: fields.teamLead || "",
+    batch: fields.batch || "",
+    status: fields.status || "Nesting",
+    rag: fields.rag || "Green",
+    training: [],
+    assessments: [],
+    pulse_checks: [],
+    qa: [],
+    strengths: [],
+    weaknesses: [],
+    action_plan: [],
+  };
+  const { data, error } = await supabase.from("employees").insert(row).select().single();
+  if (error) { console.error("Failed to add employee:", error.message); return { error }; }
+  return { employee: rowToEmployee(data) };
+}
+
+async function deleteEmployee(id) {
+  const { error } = await supabase.from("employees").delete().eq("id", id);
+  if (error) console.error("Failed to delete employee:", error.message);
+  return error;
+}
+
 async function uploadEmployeePhoto(blob, employeeId) {
   const path = `${employeeId}/${Date.now()}.jpg`;
   const { error: uploadError } = await supabase.storage
@@ -382,8 +412,87 @@ function Dashboard({ employees, onSelect }) {
 
 /* ============================== ROSTER (TABLE VIEW) ============================== */
 
-function RosterTable({ employees, onSelect }) {
+function AddEmployeeModal({ onClose, onCreate }) {
+  const [fields, setFields] = useState({
+    name: "", role: "", department: "", hireDate: "", trainer: "", teamLead: "", batch: "",
+    status: "Nesting", rag: "Green",
+  });
+  const [saving, setSaving] = useState(false);
+  const set = (k, v) => setFields((f) => ({ ...f, [k]: v }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!fields.name.trim()) return;
+    setSaving(true);
+    await onCreate(fields);
+    setSaving(false);
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>Add New Hire</h2>
+          <button className="modal-close" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="modal-form">
+          <div className="field">
+            <span className="field-label">Full Name *</span>
+            <input className="field-input" required value={fields.name} onChange={(e) => set("name", e.target.value)} />
+          </div>
+          <div className="field-grid">
+            <div className="field">
+              <span className="field-label">Role / Position</span>
+              <input className="field-input" value={fields.role} onChange={(e) => set("role", e.target.value)} />
+            </div>
+            <div className="field">
+              <span className="field-label">Department</span>
+              <input className="field-input" value={fields.department} onChange={(e) => set("department", e.target.value)} />
+            </div>
+            <div className="field">
+              <span className="field-label">Hire Date</span>
+              <input type="date" className="field-input" value={fields.hireDate} onChange={(e) => set("hireDate", e.target.value)} />
+            </div>
+            <div className="field">
+              <span className="field-label">Trainer / Coach</span>
+              <input className="field-input" value={fields.trainer} onChange={(e) => set("trainer", e.target.value)} />
+            </div>
+            <div className="field">
+              <span className="field-label">Team Lead</span>
+              <input className="field-input" value={fields.teamLead} onChange={(e) => set("teamLead", e.target.value)} />
+            </div>
+            <div className="field">
+              <span className="field-label">Batch</span>
+              <input className="field-input" value={fields.batch} onChange={(e) => set("batch", e.target.value)} />
+            </div>
+            <div className="field">
+              <span className="field-label">Status</span>
+              <select className="field-input" value={fields.status} onChange={(e) => set("status", e.target.value)}>
+                {STATUS_OPTIONS.map((s) => <option key={s}>{s}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <span className="field-label">Overall RAG</span>
+              <select className="field-input" value={fields.rag} onChange={(e) => set("rag", e.target.value)}>
+                {RAG_OPTIONS.map((s) => <option key={s}>{s}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="modal-actions">
+            <button type="button" className="modal-cancel" onClick={onClose}>Cancel</button>
+            <button type="submit" className="modal-submit" disabled={saving}>
+              {saving ? "Adding…" : "Add to Roster"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function RosterTable({ employees, onSelect, isEditor, onAdd }) {
   const [filter, setFilter] = useState("All");
+  const [showAdd, setShowAdd] = useState(false);
   const filtered = filter === "All" ? employees : employees.filter((e) => e.rag === filter);
 
   return (
@@ -393,14 +502,31 @@ function RosterTable({ employees, onSelect }) {
           <h1>Full Roster</h1>
           <p className="page-sub">All active hires, sortable and filterable by status.</p>
         </div>
-        <div className="filter-pills">
-          {["All", "Green", "Amber", "Red"].map((f) => (
-            <button key={f} className={`filter-pill ${filter === f ? "active" : ""}`} onClick={() => setFilter(f)}>
-              {f}
+        <div className="page-header-actions">
+          <div className="filter-pills">
+            {["All", "Green", "Amber", "Red"].map((f) => (
+              <button key={f} className={`filter-pill ${filter === f ? "active" : ""}`} onClick={() => setFilter(f)}>
+                {f}
+              </button>
+            ))}
+          </div>
+          {isEditor && (
+            <button className="add-employee-btn" onClick={() => setShowAdd(true)}>
+              <Plus size={14} /> Add Employee
             </button>
-          ))}
+          )}
         </div>
       </div>
+
+      {showAdd && (
+        <AddEmployeeModal
+          onClose={() => setShowAdd(false)}
+          onCreate={async (fields) => {
+            await onAdd(fields);
+            setShowAdd(false);
+          }}
+        />
+      )}
 
       <div className="table-wrap">
         <table className="data-table">
@@ -650,7 +776,7 @@ function GenericTable({ rows, columns, onUpdate, editMode, addRowTemplate }) {
   );
 }
 
-function ProfileView({ emp, editMode, onUpdate, onBack }) {
+function ProfileView({ emp, editMode, onUpdate, onBack, onDelete }) {
   const [tab, setTab] = useState("overview");
 
   const update = (field, value) => onUpdate(emp.id, field, value);
@@ -663,9 +789,22 @@ function ProfileView({ emp, editMode, onUpdate, onBack }) {
     }
   };
 
+  const handleDelete = () => {
+    if (window.confirm(`Remove ${emp.name} from the roster? This deletes their full record and can't be undone.`)) {
+      onDelete(emp.id);
+    }
+  };
+
   return (
     <div className="page">
-      <button className="back-btn" onClick={onBack}><ChevronLeft size={16} /> Back to roster</button>
+      <div className="profile-view-topbar">
+        <button className="back-btn" onClick={onBack}><ChevronLeft size={16} /> Back to roster</button>
+        {editMode && (
+          <button className="remove-employee-btn" onClick={handleDelete}>
+            <Trash2 size={14} /> Remove from roster
+          </button>
+        )}
+      </div>
 
       <div className="profile-card">
         <ProfileHeader emp={emp} editMode={editMode} onUpdate={update} onPhoto={updatePhoto} />
@@ -870,6 +1009,19 @@ function App({ session, profile }) {
     updateEmployeeField(id, field, value);
   };
 
+  const handleAddEmployee = async (fields) => {
+    const { employee, error } = await insertEmployee(fields);
+    if (error) { alert("Failed to add employee: " + error.message); return; }
+    setEmployees((prev) => [...prev, employee].sort((a, b) => a.name.localeCompare(b.name)));
+  };
+
+  const handleDeleteEmployee = async (id) => {
+    setEmployees((prev) => prev.filter((e) => e.id !== id));
+    setView("roster");
+    const error = await deleteEmployee(id);
+    if (error) alert("Failed to remove employee: " + error.message);
+  };
+
   const handleSignOut = () => supabase.auth.signOut();
 
   if (loading) {
@@ -899,10 +1051,12 @@ function App({ session, profile }) {
         </div>
 
         {view === "dashboard" && <Dashboard employees={employees} onSelect={handleSelect} />}
-        {view === "roster" && <RosterTable employees={employees} onSelect={handleSelect} />}
+        {view === "roster" && (
+          <RosterTable employees={employees} onSelect={handleSelect} isEditor={isEditor} onAdd={handleAddEmployee} />
+        )}
         {view === "settings" && <SettingsView />}
         {view === "profile" && selected && (
-          <ProfileView emp={selected} editMode={editMode} onUpdate={handleUpdate} onBack={() => setView("roster")} />
+          <ProfileView emp={selected} editMode={editMode} onUpdate={handleUpdate} onBack={() => setView("roster")} onDelete={handleDeleteEmployee} />
         )}
       </div>
     </div>
@@ -1215,6 +1369,44 @@ const CSS = `
   padding: 8px 12px; border-radius: 9px; font-size: 12px; font-weight: 500; cursor: pointer;
 }
 .signout-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+
+/* ---------- ADD / REMOVE EMPLOYEE ---------- */
+.page-header-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.add-employee-btn {
+  display: flex; align-items: center; gap: 6px; background: var(--teal-900); color: #fff; border: none;
+  border-radius: 20px; padding: 8px 16px; font-size: 12.5px; font-weight: 600; cursor: pointer;
+}
+.add-employee-btn:hover { background: var(--teal-700); }
+
+.profile-view-topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.remove-employee-btn {
+  display: flex; align-items: center; gap: 6px; background: none; border: 1px solid var(--rag-red); color: var(--rag-red);
+  border-radius: 20px; padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.remove-employee-btn:hover { background: rgba(192,70,63,0.08); }
+
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(2,32,34,0.6); display: flex; align-items: center; justify-content: center;
+  z-index: 100; padding: 20px;
+}
+.modal-card {
+  background: var(--surface); border-radius: 16px; width: 100%; max-width: 520px; max-height: 88vh; overflow-y: auto;
+  box-shadow: 0 30px 70px rgba(0,0,0,0.35);
+}
+.modal-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 1px solid var(--border); }
+.modal-header h2 { font-family: 'Space Grotesk', sans-serif; font-size: 16px; margin: 0; color: var(--teal-900); }
+.modal-close { background: none; border: none; color: var(--muted); cursor: pointer; display: flex; }
+.modal-form { padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
+.modal-cancel {
+  background: none; border: 1px solid var(--border); color: var(--muted); border-radius: 9px; padding: 9px 16px;
+  font-size: 13px; font-weight: 500; cursor: pointer;
+}
+.modal-submit {
+  background: var(--gold-500); border: none; color: var(--teal-950); border-radius: 9px; padding: 9px 18px;
+  font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.modal-submit:disabled { opacity: 0.6; cursor: default; }
 
 @media (max-width: 900px) {
   .stat-grid { grid-template-columns: repeat(2, 1fr); }
