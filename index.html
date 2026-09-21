@@ -15,11 +15,12 @@
 </div>
 
 <script type="text/plain" id="app-source">
+
 const { useState, useMemo, useRef, useEffect } = React;
 
 /* ============================== SUPABASE CONNECTION ============================== */
 /* Fill in your two values from Supabase → Project Settings → API */
-const SUPABASE_URL = "https://nrtcwhjbormeaqfgaowh.supabase.co"; // e.g. "https://xxxxxxxx.supabase.co"
+const SUPABASE_URL = "https://nrtcwhjbormeaqfgaowh.supabase.co/rest/v1/"; // e.g. "https://xxxxxxxx.supabase.co"
 const SUPABASE_ANON_KEY = "sb_publishable_luuyfJInQGLCXSR49011gw_yVcCjLuQ"; // the "anon public" key — safe to use client-side
 
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -905,18 +906,16 @@ function SettingsView() {
 
 function LoginScreen() {
   const [email, setEmail] = useState("");
-  const [status, setStatus] = useState("idle"); // idle | sending | sent | error
+  const [password, setPassword] = useState("");
+  const [status, setStatus] = useState("idle"); // idle | loading | error
   const [errorMsg, setErrorMsg] = useState("");
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setStatus("sending");
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: window.location.href },
-    });
+    setStatus("loading");
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) { setStatus("error"); setErrorMsg(error.message); }
-    else setStatus("sent");
+    // On success, AuthGate's onAuthStateChange listener picks up the session automatically.
   };
 
   return (
@@ -925,23 +924,22 @@ function LoginScreen() {
       <div className="login-card">
         <div className="brand-mark login-brand-mark">Σ</div>
         <h1>Sigma Performance Hub</h1>
-        <p>Sign in with your work email — we'll send a one-time link, no password needed.</p>
-        {status === "sent" ? (
-          <div className="login-sent">
-            Check <strong>{email}</strong> for your sign-in link, then come back to this tab.
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit}>
-            <input
-              type="email" required placeholder="you@sigmataxpro.com"
-              value={email} onChange={(e) => setEmail(e.target.value)}
-            />
-            <button type="submit" disabled={status === "sending"}>
-              {status === "sending" ? "Sending…" : "Send sign-in link"}
-            </button>
-            {status === "error" && <div className="login-error">{errorMsg}</div>}
-          </form>
-        )}
+        <p>Sign in with the email and password your admin set up for you.</p>
+        <form onSubmit={handleSubmit}>
+          <input
+            type="email" required placeholder="you@sigmataxpro.com"
+            value={email} onChange={(e) => setEmail(e.target.value)}
+          />
+          <input
+            type="password" required placeholder="Password"
+            value={password} onChange={(e) => setPassword(e.target.value)}
+          />
+          <button type="submit" disabled={status === "loading"}>
+            {status === "loading" ? "Signing in…" : "Sign in"}
+          </button>
+          {status === "error" && <div className="login-error">{errorMsg}</div>}
+        </form>
+        <p className="login-hint">Don't have an account? Ask your admin to set one up for you.</p>
       </div>
     </div>
   );
@@ -1359,6 +1357,7 @@ const CSS = `
 .login-card button:disabled { opacity: 0.6; cursor: default; }
 .login-error { color: var(--rag-red); font-size: 12px; }
 .login-sent { background: rgba(46,158,109,0.1); color: var(--rag-green); border-radius: 9px; padding: 12px; font-size: 13px; line-height: 1.5; }
+.login-hint { font-size: 11.5px; color: var(--muted); margin: 16px 0 0; }
 
 /* ---------- SIDEBAR ACCOUNT BLOCK ---------- */
 .sidebar-account { padding: 8px 12px; margin-bottom: 8px; }
