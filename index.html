@@ -269,7 +269,61 @@ function EditableField({ label, value, onChange, editMode, type = "text", option
 
 /* ============================== SIDEBAR ============================== */
 
+function ChangePasswordModal({ onClose }) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [status, setStatus] = useState("idle"); // idle | saving | error | done
+  const [errorMsg, setErrorMsg] = useState("");
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (password.length < 6) { setStatus("error"); setErrorMsg("Password must be at least 6 characters."); return; }
+    if (password !== confirm) { setStatus("error"); setErrorMsg("Passwords don't match."); return; }
+    setStatus("saving");
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) { setStatus("error"); setErrorMsg(error.message); }
+    else setStatus("done");
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>Change Password</h2>
+          <button className="modal-close" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="modal-form">
+          {status === "done" ? (
+            <div className="login-sent">Password updated.</div>
+          ) : (
+            <>
+              <div className="field">
+                <span className="field-label">New Password</span>
+                <input type="password" required className="field-input" value={password} onChange={(e) => setPassword(e.target.value)} />
+              </div>
+              <div className="field">
+                <span className="field-label">Confirm New Password</span>
+                <input type="password" required className="field-input" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+              </div>
+              {status === "error" && <div className="login-error">{errorMsg}</div>}
+            </>
+          )}
+          <div className="modal-actions">
+            <button type="button" className="modal-cancel" onClick={onClose}>{status === "done" ? "Close" : "Cancel"}</button>
+            {status !== "done" && (
+              <button type="submit" className="modal-submit" disabled={status === "saving"}>
+                {status === "saving" ? "Saving…" : "Save Password"}
+              </button>
+            )}
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function Sidebar({ view, setView, collapsed, setCollapsed, editMode, setEditMode, isEditor, userEmail, onSignOut }) {
+  const [showChangePw, setShowChangePw] = useState(false);
   const items = [
     { id: "dashboard", label: "Home", icon: LayoutDashboard },
     { id: "roster", label: "Roster", icon: Users },
@@ -320,13 +374,18 @@ function Sidebar({ view, setView, collapsed, setCollapsed, editMode, setEditMode
             <div className="sidebar-account-role">{isEditor ? "Editor" : "Viewer"}</div>
           </div>
         )}
+        <button className="change-pw-btn" onClick={() => setShowChangePw(true)}>
+          {collapsed ? <Pencil size={13} /> : "Change password"}
+        </button>
         <button className="signout-btn" onClick={onSignOut}>
           {collapsed ? <X size={14} /> : "Sign out"}
         </button>
       </div>
+      {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
     </div>
   );
 }
+
 
 /* ============================== DASHBOARD ============================== */
 
@@ -945,13 +1004,65 @@ function LoginScreen() {
   );
 }
 
+function SetNewPasswordScreen({ onDone }) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [status, setStatus] = useState("idle"); // idle | saving | error
+  const [errorMsg, setErrorMsg] = useState("");
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (password.length < 6) {
+      setStatus("error"); setErrorMsg("Password must be at least 6 characters.");
+      return;
+    }
+    if (password !== confirm) {
+      setStatus("error"); setErrorMsg("Passwords don't match.");
+      return;
+    }
+    setStatus("saving");
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) { setStatus("error"); setErrorMsg(error.message); }
+    else onDone();
+  };
+
+  return (
+    <div className="login-screen">
+      <div className="login-constellation" />
+      <div className="login-card">
+        <div className="brand-mark login-brand-mark">Σ</div>
+        <h1>Set a New Password</h1>
+        <p>You're verified — choose a password to sign in with from now on.</p>
+        <form onSubmit={handleSubmit}>
+          <input
+            type="password" required placeholder="New password"
+            value={password} onChange={(e) => setPassword(e.target.value)}
+          />
+          <input
+            type="password" required placeholder="Confirm new password"
+            value={confirm} onChange={(e) => setConfirm(e.target.value)}
+          />
+          <button type="submit" disabled={status === "saving"}>
+            {status === "saving" ? "Saving…" : "Save Password"}
+          </button>
+          {status === "error" && <div className="login-error">{errorMsg}</div>}
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function AuthGate() {
   const [session, setSession] = useState(undefined); // undefined = loading, null = signed out
   const [profile, setProfile] = useState(null);
+  const [recovery, setRecovery] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session ?? null));
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, sess) => setSession(sess));
+    const { data: listener } = supabase.auth.onAuthStateChange((event, sess) => {
+      if (event === "PASSWORD_RECOVERY") setRecovery(true);
+      setSession(sess);
+    });
     return () => listener.subscription.unsubscribe();
   }, []);
 
@@ -969,6 +1080,9 @@ function AuthGate() {
   }
   if (!session) {
     return <div className="auth-loading"><style>{CSS}</style><LoginScreen /></div>;
+  }
+  if (recovery) {
+    return <div className="auth-loading"><style>{CSS}</style><SetNewPasswordScreen onDone={() => setRecovery(false)} /></div>;
   }
   if (!profile) {
     return <div className="auth-loading"><style>{CSS}</style>Setting up your account…</div>;
@@ -1368,6 +1482,11 @@ const CSS = `
   padding: 8px 12px; border-radius: 9px; font-size: 12px; font-weight: 500; cursor: pointer;
 }
 .signout-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+.change-pw-btn {
+  width: 100%; background: none; border: none; color: rgba(255,255,255,0.6);
+  padding: 7px 12px; font-size: 11.5px; font-weight: 500; cursor: pointer; text-align: left;
+}
+.change-pw-btn:hover { color: var(--gold-300); }
 
 /* ---------- ADD / REMOVE EMPLOYEE ---------- */
 .page-header-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
