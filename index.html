@@ -20,7 +20,7 @@ const { useState, useMemo, useRef, useEffect } = React;
 
 /* ============================== SUPABASE CONNECTION ============================== */
 /* Fill in your two values from Supabase → Project Settings → API */
-const SUPABASE_URL = "https://nrtcwhjbormeaqfgaowh.supabase.co/rest/v1/"; // e.g. "https://xxxxxxxx.supabase.co"
+const SUPABASE_URL = "https://nrtcwhjbormeaqfgaowh.supabase.co"; // e.g. "https://xxxxxxxx.supabase.co"
 const SUPABASE_ANON_KEY = "sb_publishable_luuyfJInQGLCXSR49011gw_yVcCjLuQ"; // the "anon public" key — safe to use client-side
 
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
