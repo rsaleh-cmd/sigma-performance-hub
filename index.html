@@ -1446,8 +1446,8 @@ const CSS = `
   background: var(--canvas); color: var(--muted); font-family: 'Inter', sans-serif; font-size: 14px;
 }
 .login-screen {
-  position: relative; min-height: 100vh; display: flex; align-items: center; justify-content: center;
-  background: linear-gradient(180deg, var(--teal-900) 0%, var(--teal-950) 100%); overflow: hidden;
+  position: relative; width: 100%; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: var(--teal-900); overflow: hidden;
 }
 .login-constellation {
   position: absolute; inset: 0; opacity: 0.12;
@@ -1460,9 +1460,9 @@ const CSS = `
 }
 .login-card {
   position: relative; z-index: 1; background: var(--surface); border-radius: 18px; padding: 34px 30px;
-  width: 320px; text-align: center; box-shadow: 0 24px 60px rgba(0,0,0,0.3);
+  width: 360px; max-width: calc(100vw - 32px); text-align: center; box-shadow: 0 24px 60px rgba(0,0,0,0.3);
 }
-.login-logo { display: block; width: 132px; height: 132px; object-fit: contain; margin: -6px auto 10px; }
+.login-logo { display: block; width: 210px; height: 210px; object-fit: contain; margin: -4px auto 8px; }
 .brand-logo { object-fit: contain; flex-shrink: 0; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.35)); }
 .page-header-brand { display: flex; align-items: center; gap: 18px; }
 .page-logo { width: 84px; height: 84px; object-fit: contain; flex-shrink: 0; filter: drop-shadow(0 3px 8px rgba(4,71,75,0.25)); }
@@ -1479,7 +1479,7 @@ const CSS = `
 .login-card button:disabled { opacity: 0.6; cursor: default; }
 .login-error { color: var(--rag-red); font-size: 12px; }
 .login-sent { background: rgba(46,158,109,0.1); color: var(--rag-green); border-radius: 9px; padding: 12px; font-size: 13px; line-height: 1.5; }
-.login-hint { font-size: 11.5px; color: var(--muted); margin: 16px 0 0; }
+.login-card .login-hint { font-size: 11.5px; color: var(--muted); margin: 18px 0 0; }
 
 /* ---------- SIDEBAR ACCOUNT BLOCK ---------- */
 .sidebar-account { padding: 8px 12px; margin-bottom: 8px; }
