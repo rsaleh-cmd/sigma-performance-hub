@@ -44,6 +44,7 @@ function rowToEmployee(row) {
     hireDate: row.hire_date,
     trainer: row.trainer,
     teamLead: row.team_lead,
+    email: row.email || "",
     batch: row.batch,
     status: row.status,
     rag: row.rag,
@@ -82,6 +83,7 @@ async function insertEmployee(fields) {
     hire_date: fields.hireDate || null,
     trainer: fields.trainer || "",
     team_lead: fields.teamLead || "",
+    email: (fields.email || "").trim() || null,
     batch: fields.batch || "",
     status: fields.status || "Nesting",
     rag: fields.rag || "Green",
@@ -146,6 +148,7 @@ const Sparkles = (p) => <Icon {...p}><path d="M12 3l1.2 4.3L17.5 8.5l-4.3 1.2L12
 const X = (p) => <Icon {...p}><path d="M6 6l12 12M18 6L6 18" /></Icon>;
 const Camera = (p) => <Icon {...p}><rect x="3" y="7" width="18" height="13" rx="2" /><path d="M8 7l1.5-2.5h5L16 7" /><circle cx="12" cy="13.5" r="3.5" /></Icon>;
 const Menu = (p) => <Icon {...p}><path d="M4 7h16M4 12h16M4 17h16" /></Icon>;
+const Trophy = (p) => <Icon {...p}><path d="M7 4h10v5a5 5 0 01-10 0V4z" /><path d="M7 6H4v2a3 3 0 003 3M17 6h3v2a3 3 0 01-3 3" /><path d="M12 14v4M8 20h8" /></Icon>;
 const HomeIcon = (p) => <Icon {...p}><path d="M3 11.5L12 4l9 7.5" /><path d="M5 10v9a1 1 0 001 1h4v-5h4v5h4a1 1 0 001-1v-9" /></Icon>;
 const UserCircle = (p) => <Icon {...p}><circle cx="12" cy="12" r="9" /><circle cx="12" cy="10" r="3" /><path d="M6.2 18.2c1.2-2.2 3.3-3.2 5.8-3.2s4.6 1 5.8 3.2" /></Icon>;
 
@@ -326,14 +329,15 @@ function ChangePasswordModal({ onClose }) {
   );
 }
 
-function Sidebar({ view, setView, collapsed, setCollapsed, editMode, setEditMode, isEditor, userEmail, onSignOut }) {
+function Sidebar({ view, setView, collapsed, setCollapsed, editMode, setEditMode, isEditor, userEmail, onSignOut, items: itemsProp, roleLabel }) {
   const [showChangePw, setShowChangePw] = useState(false);
-  const items = [
+  const defaultItems = [
     { id: "dashboard", label: "Home", icon: HomeIcon },
     { id: "departments", label: "Departments", icon: LayoutDashboard },
     { id: "roster", label: "Roster", icon: Users },
     { id: "account", label: "Account", icon: UserCircle },
   ];
+  const items = itemsProp || defaultItems;
   return (
     <div className={`sidebar ${collapsed ? "collapsed" : ""}`}>
       <div className="sidebar-constellation" />
@@ -376,7 +380,7 @@ function Sidebar({ view, setView, collapsed, setCollapsed, editMode, setEditMode
         {!collapsed && (
           <div className="sidebar-account">
             <div className="sidebar-account-email">{userEmail}</div>
-            <div className="sidebar-account-role">{isEditor ? "Editor" : "Viewer"}</div>
+            <div className="sidebar-account-role">{roleLabel || (isEditor ? "Editor" : "Viewer")}</div>
           </div>
         )}
         <button className="change-pw-btn" onClick={() => setShowChangePw(true)}>
@@ -577,8 +581,15 @@ function DepartmentsView({ employees, selectedDept, onSelectDept, onSelect }) {
   );
 }
 
-function AccountView({ email, isEditor, onSignOut }) {
+const ROLE_INFO = {
+  editor: { label: "Editor", desc: "You can add, edit, and remove employee profiles." },
+  viewer: { label: "Viewer", desc: "You can view profiles but not change them. Ask an admin if you need edit access." },
+  agent: { label: "Agent", desc: "You can see your own performance profile and the monthly leaderboard." },
+};
+
+function AccountView({ email, role, onSignOut }) {
   const [showChangePw, setShowChangePw] = useState(false);
+  const info = ROLE_INFO[role] || ROLE_INFO.viewer;
   return (
     <div className="page">
       <div className="page-header">
@@ -592,12 +603,8 @@ function AccountView({ email, isEditor, onSignOut }) {
         <div className="account-avatar">{(email || "?")[0].toUpperCase()}</div>
         <div>
           <div className="account-email">{email}</div>
-          <span className={"role-badge " + (isEditor ? "editor" : "viewer")}>{isEditor ? "Editor" : "Viewer"}</span>
-          <p className="account-desc">
-            {isEditor
-              ? "You can add, edit, and remove employee profiles."
-              : "You can view profiles but not change them. Ask an admin if you need edit access."}
-          </p>
+          <span className={"role-badge " + (ROLE_INFO[role] ? role : "viewer")}>{info.label}</span>
+          <p className="account-desc">{info.desc}</p>
         </div>
       </div>
 
@@ -614,7 +621,7 @@ function AccountView({ email, isEditor, onSignOut }) {
 
 function AddEmployeeModal({ onClose, onCreate }) {
   const [fields, setFields] = useState({
-    name: "", role: "", department: "", hireDate: "", trainer: "", teamLead: "", batch: "",
+    name: "", email: "", role: "", department: "", hireDate: "", trainer: "", teamLead: "", batch: "",
     status: "Nesting", rag: "Green",
   });
   const [saving, setSaving] = useState(false);
@@ -639,6 +646,11 @@ function AddEmployeeModal({ onClose, onCreate }) {
           <div className="field">
             <span className="field-label">Full Name *</span>
             <input className="field-input" required value={fields.name} onChange={(e) => set("name", e.target.value)} />
+          </div>
+          <div className="field">
+            <span className="field-label">Work Email</span>
+            <input type="email" className="field-input" placeholder="Optional" value={fields.email} onChange={(e) => set("email", e.target.value)} />
+            <span className="field-hint">Their login email. An agent who signs in with it sees only this profile.</span>
           </div>
           <div className="field-grid">
             <div className="field">
@@ -811,6 +823,7 @@ function ProfileHeader({ emp, editMode, onUpdate, onPhoto }) {
           <EditableField label="Batch" value={emp.batch} editMode={editMode} onChange={(v) => onUpdate("batch", v)} />
           <EditableField label="Status" value={emp.status} editMode={editMode} options={STATUS_OPTIONS} onChange={(v) => onUpdate("status", v)} />
           <EditableField label="Overall RAG" value={emp.rag} editMode={editMode} options={RAG_OPTIONS} onChange={(v) => onUpdate("rag", v)} />
+          <EditableField label="Work Email" value={emp.email} editMode={editMode} type="email" onChange={(v) => onUpdate("email", v)} />
         </div>
       </div>
     </div>
@@ -1006,14 +1019,18 @@ function ProfileView({ emp, editMode, onUpdate, onBack, onDelete, backLabel }) {
 
   return (
     <div className="page">
-      <div className="profile-view-topbar">
-        <button className="back-btn" onClick={onBack}><ChevronLeft size={16} /> {backLabel || "Back to roster"}</button>
-        {editMode && (
-          <button className="remove-employee-btn" onClick={handleDelete}>
-            <Trash2 size={14} /> Remove from roster
-          </button>
-        )}
-      </div>
+      {(onBack || editMode) && (
+        <div className="profile-view-topbar">
+          {onBack
+            ? <button className="back-btn" onClick={onBack}><ChevronLeft size={16} /> {backLabel || "Back to roster"}</button>
+            : <span />}
+          {editMode && (
+            <button className="remove-employee-btn" onClick={handleDelete}>
+              <Trash2 size={14} /> Remove from roster
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="profile-card">
         <ProfileHeader emp={emp} editMode={editMode} onUpdate={update} onPhoto={updatePhoto} />
@@ -1218,7 +1235,281 @@ function AuthGate() {
     return <div className="auth-loading"><style>{CSS}</style>Setting up your account…</div>;
   }
 
+  if (profile.role === "agent") return <AgentApp session={session} profile={profile} />;
   return <App session={session} profile={profile} />;
+}
+
+/* ============================== AGENT EXPERIENCE ============================== */
+
+function currentMonthStart() {
+  const d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-01";
+}
+
+function shiftMonth(ms, delta) {
+  const parts = ms.split("-").map(Number);
+  const d = new Date(parts[0], parts[1] - 1 + delta, 1);
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-01";
+}
+
+function monthLabel(ms) {
+  const parts = ms.split("-").map(Number);
+  return new Date(parts[0], parts[1] - 1, 1).toLocaleString("en-US", { month: "long", year: "numeric" });
+}
+
+async function fetchLeaderboard(month, limit) {
+  const { data, error } = await supabase.rpc("get_leaderboard", { p_month: month, p_limit: limit || 10 });
+  if (error) {
+    console.error("Failed to load leaderboard:", error.message);
+    return { error: error.message, rows: [] };
+  }
+  return {
+    error: null,
+    rows: (data || []).map((r) => ({
+      id: r.employee_id,
+      name: r.name,
+      department: r.department,
+      photo: r.photo_url,
+      score: Number(r.score),
+      place: Number(r.place),
+      isMe: !!r.is_me,
+    })),
+  };
+}
+
+function useLeaderboard(month) {
+  const [state, setState] = useState({ loading: true, error: null, rows: [] });
+  useEffect(() => {
+    let active = true;
+    setState({ loading: true, error: null, rows: [] });
+    fetchLeaderboard(month).then((res) => {
+      if (active) setState({ loading: false, error: res.error, rows: res.rows });
+    });
+    return () => { active = false; };
+  }, [month]);
+  return state;
+}
+
+function LeaderRow({ r }) {
+  return (
+    <div className={"leader-row" + (r.isMe ? " me" : "")}>
+      <div className="leader-place">{r.place}</div>
+      <OrbitAvatar photo={r.photo} name={r.name} score={r.score} size={44} />
+      <div className="leader-info">
+        <div className="leader-name">{r.name}{r.isMe && <span className="you-tag">You</span>}</div>
+        <div className="leader-dept">{r.department || "—"}</div>
+      </div>
+      <div className="leader-bar"><div className="leader-bar-fill" style={{ width: Math.max(0, Math.min(100, r.score)) + "%" }} /></div>
+      <div className="leader-score">{r.score}%</div>
+    </div>
+  );
+}
+
+function LeaderboardView() {
+  const [month, setMonth] = useState(currentMonthStart());
+  const board = useLeaderboard(month);
+  const isCurrent = month === currentMonthStart();
+  const rows = board.rows;
+  const topList = rows.filter((r) => r.place <= 10);
+  const podium = topList.slice(0, 3);
+  const rest = topList.slice(3);
+  const outside = rows.filter((r) => r.isMe && r.place > 10);
+  const visual = [podium[1], podium[0], podium[2]].filter(Boolean);
+  const mine = rows.find((r) => r.isMe);
+  const narrow = window.innerWidth < 700;
+
+  return (
+    <div className="page">
+      <div className="page-header">
+        <div>
+          <h1>Leaderboard</h1>
+          <p className="page-sub">
+            Top agents for {monthLabel(month)}, ranked by composite score from that month's assessments, pulse checks, and QA.
+          </p>
+        </div>
+        <div className="month-nav">
+          <button onClick={() => setMonth(shiftMonth(month, -1))} title="Previous month"><ChevronLeft size={16} /></button>
+          <span>{monthLabel(month)}</span>
+          <button onClick={() => setMonth(shiftMonth(month, 1))} disabled={isCurrent} title="Next month"><ChevronRight size={16} /></button>
+        </div>
+      </div>
+
+      {board.loading && <div className="panel placeholder-panel"><p>Loading leaderboard…</p></div>}
+
+      {!board.loading && board.error && (
+        <div className="panel placeholder-panel">
+          <Trophy size={28} color="var(--gold-500)" />
+          <p>The leaderboard isn't available right now. Please tell your manager.</p>
+        </div>
+      )}
+
+      {!board.loading && !board.error && rows.length === 0 && (
+        <div className="panel placeholder-panel">
+          <Trophy size={28} color="var(--gold-500)" />
+          <p>No scores have been recorded for {monthLabel(month)} yet.</p>
+        </div>
+      )}
+
+      {!board.loading && !board.error && rows.length > 0 && (
+        <div>
+          {!mine && (
+            <div className="leader-note">
+              You're not ranked for {monthLabel(month)} — you'll appear here once you have scores dated in that month.
+            </div>
+          )}
+
+          <div className="podium">
+            {visual.map((r) => {
+              const idx = podium.indexOf(r);
+              const cls = ["first", "second", "third"][idx];
+              return (
+                <div key={r.id} className={"podium-card " + cls + (r.isMe ? " me" : "")}>
+                  <div className="podium-medal">{r.place}</div>
+                  <OrbitAvatar photo={r.photo} name={r.name} score={r.score} size={idx === 0 ? (narrow ? 70 : 96) : (narrow ? 52 : 76)} />
+                  <div className="podium-name">{r.name}{r.isMe && <span className="you-tag">You</span>}</div>
+                  <div className="podium-dept">{r.department || "—"}</div>
+                  <div className="podium-score">{r.score}%</div>
+                </div>
+              );
+            })}
+          </div>
+
+          {rest.length > 0 && (
+            <div className="leader-list">{rest.map((r) => <LeaderRow key={r.id} r={r} />)}</div>
+          )}
+
+          {outside.length > 0 && (
+            <div>
+              <div className="leader-gap">• • •</div>
+              <div className="leader-list">{outside.map((r) => <LeaderRow key={r.id} r={r} />)}</div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AgentHome({ me, email, onNavigate }) {
+  const board = useLeaderboard(currentMonthStart());
+  const mine = board.rows.find((r) => r.isMe);
+  const fmt = (v) => (v === null || v === undefined ? "—" : v + "%");
+  const composite = me ? compositeScore(me) : 0;
+
+  let rankMeta;
+  if (board.loading) rankMeta = "Checking…";
+  else if (board.error) rankMeta = "Unavailable";
+  else if (mine) rankMeta = "You're #" + mine.place + " this month";
+  else rankMeta = "Not ranked yet this month";
+
+  const tiles = [];
+  if (me) {
+    tiles.push({ id: "performance", title: "My Performance", icon: TrendingUp,
+      desc: "Your scores, feedback, strengths, and action plan.",
+      meta: composite ? "Composite " + composite + "%" : "No scores yet" });
+  }
+  tiles.push({ id: "leaderboard", title: "Leaderboard", icon: Trophy,
+    desc: "See who is leading this month.", meta: rankMeta });
+  tiles.push({ id: "account", title: "Account", icon: UserCircle,
+    desc: "Your sign-in details and password.", meta: "Agent" });
+
+  return (
+    <div className="page">
+      <div className="home-hero">
+        <img src="logo.png" alt="Sigma Performance Hub" className="home-logo" />
+        <div className="home-hero-text">
+          {me
+            ? <h1>Welcome back, <span>{me.name.split(" ")[0]}</span></h1>
+            : <h1>Welcome to the <span>Performance Hub</span></h1>}
+          <p>{me ? "Here's where you stand." : "Your leaderboard and account are below."}</p>
+        </div>
+      </div>
+
+      {me ? (
+        <div>
+          <div className="section-row"><h2>Your numbers</h2></div>
+          <div className="stat-grid">
+            <div className="stat-card">
+              <div className="stat-icon" style={{ background: "var(--teal-900)" }}><TrendingUp size={18} color="#fff" /></div>
+              <div><div className="stat-value">{composite ? composite + "%" : "—"}</div><div className="stat-label">Composite score</div></div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-icon" style={{ background: "var(--teal-700)" }}><CalendarDays size={18} color="#fff" /></div>
+              <div><div className="stat-value">{fmt(avg(me.assessments, "score"))}</div><div className="stat-label">Avg. assessment</div></div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-icon" style={{ background: "var(--gold-500)" }}><PhoneCall size={18} color="#fff" /></div>
+              <div><div className="stat-value">{fmt(avg(me.pulseChecks, "score"))}</div><div className="stat-label">Avg. pulse check</div></div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-icon" style={{ background: "var(--teal-900)" }}><ShieldCheck size={18} color="#fff" /></div>
+              <div><div className="stat-value">{fmt(avg(me.qa, "overall"))}</div><div className="stat-label">Avg. QA score</div></div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="leader-note">
+          Your login ({email}) isn't linked to an employee profile yet. Ask your manager to add this email to your profile so your own scores show up here.
+        </div>
+      )}
+
+      <div className="section-row"><h2>Explore</h2></div>
+      <div className="nav-tile-grid">
+        {tiles.map((t) => (
+          <button key={t.id} className="nav-tile" onClick={() => onNavigate(t.id)}>
+            <div className="nav-tile-icon"><t.icon size={22} /></div>
+            <div className="nav-tile-title">{t.title}</div>
+            <div className="nav-tile-desc">{t.desc}</div>
+            <div className="nav-tile-meta"><span>{t.meta}</span><ChevronRight size={16} /></div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AgentApp({ session, profile }) {
+  const [me, setMe] = useState(undefined); // undefined = loading, null = no linked profile
+  const [view, setView] = useState("home");
+  const [collapsed, setCollapsed] = useState(() => window.innerWidth < 700);
+
+  useEffect(() => {
+    let active = true;
+    fetchEmployees().then((rows) => { if (active) setMe(rows[0] || null); });
+    return () => { active = false; };
+  }, []);
+
+  if (me === undefined) {
+    return <div className="auth-loading"><style>{CSS}</style>Loading your profile…</div>;
+  }
+
+  const items = [
+    { id: "home", label: "Home", icon: HomeIcon },
+    { id: "performance", label: "My Performance", icon: TrendingUp },
+    { id: "leaderboard", label: "Leaderboard", icon: Trophy },
+    { id: "account", label: "Account", icon: UserCircle },
+  ].filter((i) => me || i.id !== "performance");
+  const titles = { home: "Home", performance: "My Performance", leaderboard: "Leaderboard", account: "Account" };
+  const handleSignOut = () => supabase.auth.signOut();
+
+  return (
+    <div className="app-root">
+      <style>{CSS}</style>
+      <Sidebar
+        view={view} setView={setView} collapsed={collapsed} setCollapsed={setCollapsed}
+        editMode={false} setEditMode={() => {}} isEditor={false}
+        items={items} roleLabel="Agent"
+        userEmail={session.user.email} onSignOut={handleSignOut}
+      />
+      <div className="main-area">
+        <div className="topbar"><div className="topbar-title">{titles[view]}</div></div>
+        {view === "home" && <AgentHome me={me} email={session.user.email} onNavigate={setView} />}
+        {view === "performance" && me && <ProfileView emp={me} editMode={false} onUpdate={() => {}} />}
+        {view === "leaderboard" && <LeaderboardView />}
+        {view === "account" && <AccountView email={session.user.email} role="agent" onSignOut={handleSignOut} />}
+      </div>
+    </div>
+  );
 }
 
 /* ============================== APP ============================== */
@@ -1253,14 +1544,18 @@ function App({ session, profile }) {
     setView(id);
   };
 
-  const handleUpdate = (id, field, value) => {
+  const handleUpdate = async (id, field, value) => {
     setEmployees((prev) => prev.map((e) => (e.id === id ? { ...e, [field]: value } : e)));
-    updateEmployeeField(id, field, value);
+    const error = await updateEmployeeField(id, field, value);
+    if (error && error.code === "23505") alert("That work email is already linked to another employee profile.");
   };
 
   const handleAddEmployee = async (fields) => {
     const { employee, error } = await insertEmployee(fields);
-    if (error) { alert("Failed to add employee: " + error.message); return; }
+    if (error) {
+      alert(error.code === "23505" ? "That work email is already linked to another employee profile." : "Failed to add employee: " + error.message);
+      return;
+    }
     setEmployees((prev) => [...prev, employee].sort((a, b) => a.name.localeCompare(b.name)));
   };
 
@@ -1310,7 +1605,7 @@ function App({ session, profile }) {
         {view === "roster" && (
           <RosterTable employees={employees} onSelect={(id) => handleSelect(id, "roster")} isEditor={isEditor} onAdd={handleAddEmployee} />
         )}
-        {view === "account" && <AccountView email={session.user.email} isEditor={isEditor} onSignOut={handleSignOut} />}
+        {view === "account" && <AccountView email={session.user.email} role={profile.role} onSignOut={handleSignOut} />}
         {view === "profile" && selected && (
           <ProfileView emp={selected} editMode={editMode} onUpdate={handleUpdate} onBack={() => setView(profileOrigin)}
             backLabel={profileOrigin === "departments" ? "Back to departments" : "Back to roster"} onDelete={handleDeleteEmployee} />
@@ -1754,7 +2049,57 @@ const CSS = `
 .account-btn.danger { color: var(--rag-red); }
 .account-btn.danger:hover { border-color: var(--rag-red); }
 
+/* ---------- LEADERBOARD ---------- */
+.month-nav { display: flex; align-items: center; gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 4px; }
+.month-nav button { background: none; border: none; width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--teal-900); cursor: pointer; }
+.month-nav button:hover:not(:disabled) { background: var(--canvas); }
+.month-nav button:disabled { opacity: 0.3; cursor: default; }
+.month-nav span { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 13.5px; color: var(--teal-900); min-width: 128px; text-align: center; }
+
+.podium { display: flex; justify-content: center; align-items: flex-end; gap: 14px; margin: 38px 0 26px; }
+.podium-card {
+  position: relative; flex: 1; max-width: 230px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 28px 14px 18px;
+}
+.podium-card.first { padding-top: 36px; padding-bottom: 24px; border-color: var(--gold-500); box-shadow: 0 12px 30px rgba(192,159,37,0.18); background: linear-gradient(180deg, rgba(192,159,37,0.09), var(--surface) 55%); }
+.podium-card.me { outline: 2px solid var(--gold-500); outline-offset: 2px; }
+.podium-medal {
+  position: absolute; top: -15px; left: 50%; transform: translateX(-50%); width: 30px; height: 30px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 14px;
+  color: var(--teal-950); border: 2px solid var(--surface);
+}
+.podium-card.first .podium-medal { width: 36px; height: 36px; top: -18px; font-size: 16px; background: linear-gradient(135deg, var(--gold-300), var(--gold-500)); }
+.podium-card.second .podium-medal { background: linear-gradient(135deg, #E3EAEB, #AEBBBD); }
+.podium-card.third .podium-medal { background: linear-gradient(135deg, #E2B58A, #B07A4A); }
+.podium-name { font-weight: 600; font-size: 14px; color: var(--teal-900); margin-top: 8px; }
+.podium-dept { font-size: 11.5px; color: var(--muted); }
+.podium-score { font-family: 'IBM Plex Mono', monospace; font-weight: 500; font-size: 20px; color: var(--gold-500); margin-top: 4px; }
+.you-tag { display: inline-block; margin-left: 6px; font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; background: var(--gold-500); color: var(--teal-950); padding: 2px 6px; border-radius: 10px; vertical-align: middle; }
+
+.leader-list { display: flex; flex-direction: column; gap: 8px; }
+.leader-row { display: flex; align-items: center; gap: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 10px 16px; }
+.leader-row.me { border-color: var(--gold-500); background: rgba(192,159,37,0.07); }
+.leader-place { width: 28px; text-align: center; font-family: 'IBM Plex Mono', monospace; font-weight: 500; font-size: 15px; color: var(--muted); }
+.leader-info { flex: 0 1 230px; min-width: 0; }
+.leader-name { font-weight: 600; font-size: 13.5px; color: var(--teal-900); }
+.leader-dept { font-size: 11.5px; color: var(--muted); }
+.leader-bar { flex: 1; height: 6px; background: var(--canvas); border-radius: 6px; overflow: hidden; }
+.leader-bar-fill { height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--teal-700), var(--gold-500)); }
+.leader-score { font-family: 'IBM Plex Mono', monospace; font-weight: 500; font-size: 15px; color: var(--gold-500); width: 52px; text-align: right; }
+.leader-gap { text-align: center; color: var(--muted); letter-spacing: 6px; margin: 12px 0; font-size: 12px; }
+.leader-note { background: rgba(192,159,37,0.1); color: var(--teal-900); border-radius: 12px; padding: 12px 16px; font-size: 13px; line-height: 1.5; margin-bottom: 20px; }
+.field-hint { font-size: 11px; color: var(--muted); margin-top: 3px; line-height: 1.4; }
+.role-badge.agent { background: rgba(12,107,112,0.12); color: var(--teal-700); }
+
 @media (max-width: 900px) {
+  .page { padding: 22px 16px 48px; }
+  .podium { gap: 8px; margin-top: 34px; }
+  .podium-card { padding: 26px 6px 14px; }
+  .podium-name { font-size: 12.5px; }
+  .podium-score { font-size: 17px; }
+  .leader-row { gap: 10px; padding: 10px 12px; }
+  .leader-bar { display: none; }
+  .leader-info { flex: 1; }
   .nav-tile-grid { grid-template-columns: 1fr; }
   .home-hero { flex-direction: column; text-align: center; padding: 26px 20px; gap: 16px; }
   .home-hero h1 { font-size: 26px; }
