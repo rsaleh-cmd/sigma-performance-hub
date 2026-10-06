@@ -146,6 +146,8 @@ const Sparkles = (p) => <Icon {...p}><path d="M12 3l1.2 4.3L17.5 8.5l-4.3 1.2L12
 const X = (p) => <Icon {...p}><path d="M6 6l12 12M18 6L6 18" /></Icon>;
 const Camera = (p) => <Icon {...p}><rect x="3" y="7" width="18" height="13" rx="2" /><path d="M8 7l1.5-2.5h5L16 7" /><circle cx="12" cy="13.5" r="3.5" /></Icon>;
 const Menu = (p) => <Icon {...p}><path d="M4 7h16M4 12h16M4 17h16" /></Icon>;
+const HomeIcon = (p) => <Icon {...p}><path d="M3 11.5L12 4l9 7.5" /><path d="M5 10v9a1 1 0 001 1h4v-5h4v5h4a1 1 0 001-1v-9" /></Icon>;
+const UserCircle = (p) => <Icon {...p}><circle cx="12" cy="12" r="9" /><circle cx="12" cy="10" r="3" /><path d="M6.2 18.2c1.2-2.2 3.3-3.2 5.8-3.2s4.6 1 5.8 3.2" /></Icon>;
 
 
 /* ============================== SEED DATA ============================== */
@@ -327,9 +329,10 @@ function ChangePasswordModal({ onClose }) {
 function Sidebar({ view, setView, collapsed, setCollapsed, editMode, setEditMode, isEditor, userEmail, onSignOut }) {
   const [showChangePw, setShowChangePw] = useState(false);
   const items = [
-    { id: "dashboard", label: "Home", icon: LayoutDashboard },
+    { id: "dashboard", label: "Home", icon: HomeIcon },
+    { id: "departments", label: "Departments", icon: LayoutDashboard },
     { id: "roster", label: "Roster", icon: Users },
-    { id: "settings", label: "Settings", icon: Settings },
+    { id: "account", label: "Account", icon: UserCircle },
   ];
   return (
     <div className={`sidebar ${collapsed ? "collapsed" : ""}`}>
@@ -389,38 +392,66 @@ function Sidebar({ view, setView, collapsed, setCollapsed, editMode, setEditMode
 }
 
 
-/* ============================== DASHBOARD ============================== */
+/* ============================== HOME / DEPARTMENTS / ACCOUNT ============================== */
 
-function Dashboard({ employees, onSelect }) {
-  const [query, setQuery] = useState("");
-  const filtered = employees.filter((e) =>
-    e.name.toLowerCase().includes(query.toLowerCase()) ||
-    e.department.toLowerCase().includes(query.toLowerCase())
-  );
+function avgComposite(list) {
+  const scored = list.filter((e) => compositeScore(e) > 0);
+  if (!scored.length) return null;
+  return Math.round(scored.reduce((s, e) => s + compositeScore(e), 0) / scored.length);
+}
 
-  const counts = { Green: 0, Amber: 0, Red: 0 };
-  employees.forEach((e) => counts[e.rag]++);
-  const avgComposite = Math.round(
-    employees.reduce((s, e) => s + compositeScore(e), 0) / employees.length
-  );
+function groupByDepartment(employees) {
+  const groups = {};
+  employees.forEach((e) => {
+    const key = (e.department || "").trim() || "Unassigned";
+    (groups[key] = groups[key] || []).push(e);
+  });
+  return groups;
+}
+
+function ragCounts(list) {
+  const c = { Green: 0, Amber: 0, Red: 0 };
+  list.forEach((e) => { if (c[e.rag] !== undefined) c[e.rag]++; });
+  return c;
+}
+
+function plural(n, one, many) {
+  return n + " " + (n === 1 ? one : many);
+}
+
+function Dashboard({ employees, isEditor, onNavigate }) {
+  const counts = ragCounts(employees);
+  const overall = avgComposite(employees);
+  const deptCount = Object.keys(groupByDepartment(employees)).length;
+
+  const tiles = [
+    { id: "departments", title: "Departments", icon: LayoutDashboard,
+      desc: "See how each team is performing, then open it to meet the people on it.",
+      meta: plural(deptCount, "department", "departments") },
+    { id: "roster", title: "Roster", icon: Users,
+      desc: "Every hire in one table, with scores and status at a glance.",
+      meta: plural(employees.length, "employee", "employees") },
+    { id: "account", title: "Account", icon: UserCircle,
+      desc: "Your sign-in details, access level, and password.",
+      meta: isEditor ? "Editor" : "Viewer" },
+  ];
 
   return (
     <div className="page">
-      <div className="page-header">
-        <div className="page-header-brand">
-          <img src="logo.png" alt="Sigma Performance Hub" className="page-logo" />
-          <div>
-            <h1>Batch-2026-01 Overview</h1>
-            <p className="page-sub">Tracking {employees.length} hires across Support, Enrolment, Premier, and SME.</p>
-          </div>
+      <div className="home-hero">
+        <img src="logo.png" alt="Sigma Performance Hub" className="home-logo" />
+        <div className="home-hero-text">
+          <h1>Welcome to the <span>Performance Hub</span></h1>
+          <p>Tracking {plural(employees.length, "hire", "hires")} across {plural(deptCount, "department", "departments")}.</p>
         </div>
       </div>
 
+      <div className="section-row"><h2>At a glance</h2></div>
       <div className="stat-grid">
         <div className="stat-card">
           <div className="stat-icon" style={{ background: "var(--teal-900)" }}><TrendingUp size={18} color="#fff" /></div>
           <div>
-            <div className="stat-value">{avgComposite}%</div>
+            <div className="stat-value">{overall === null ? "—" : overall + "%"}</div>
             <div className="stat-label">Avg. composite score</div>
           </div>
         </div>
@@ -447,30 +478,134 @@ function Dashboard({ employees, onSelect }) {
         </div>
       </div>
 
-      <div className="section-row">
-        <h2>Roster</h2>
-        <div className="search-box">
-          <Search size={15} />
-          <input placeholder="Search by name or department..." value={query} onChange={(e) => setQuery(e.target.value)} />
-        </div>
-      </div>
-
-      <div className="roster-grid">
-        {filtered.map((e) => (
-          <button key={e.id} className="employee-card" onClick={() => onSelect(e.id)}>
-            <OrbitAvatar photo={e.photo} name={e.name} score={compositeScore(e)} />
-            <div className="employee-card-info">
-              <div className="employee-name">{e.name}</div>
-              <div className="employee-role">{e.role}</div>
-              <div className="employee-meta">
-                <StatusPill status={e.status} />
-                <RagBadge rag={e.rag} />
-              </div>
-            </div>
-            <div className="employee-score">{compositeScore(e)}%</div>
+      <div className="section-row"><h2>Explore</h2></div>
+      <div className="nav-tile-grid">
+        {tiles.map((t) => (
+          <button key={t.id} className="nav-tile" onClick={() => onNavigate(t.id)}>
+            <div className="nav-tile-icon"><t.icon size={22} /></div>
+            <div className="nav-tile-title">{t.title}</div>
+            <div className="nav-tile-desc">{t.desc}</div>
+            <div className="nav-tile-meta"><span>{t.meta}</span><ChevronRight size={16} /></div>
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+function EmployeeCard({ emp, onSelect }) {
+  return (
+    <button className="employee-card" onClick={() => onSelect(emp.id)}>
+      <OrbitAvatar photo={emp.photo} name={emp.name} score={compositeScore(emp)} />
+      <div className="employee-card-info">
+        <div className="employee-name">{emp.name}</div>
+        <div className="employee-role">{emp.role}</div>
+        <div className="employee-meta">
+          <StatusPill status={emp.status} />
+          <RagBadge rag={emp.rag} />
+        </div>
+      </div>
+      <div className="employee-score">{compositeScore(emp)}%</div>
+    </button>
+  );
+}
+
+function DepartmentsView({ employees, selectedDept, onSelectDept, onSelect }) {
+  const groups = groupByDepartment(employees);
+  const names = Object.keys(groups).sort((a, b) => a.localeCompare(b));
+  const active = selectedDept && groups[selectedDept] ? selectedDept : null;
+
+  if (active) {
+    const list = groups[active];
+    const c = ragCounts(list);
+    const score = avgComposite(list);
+    return (
+      <div className="page">
+        <button className="back-btn" onClick={() => onSelectDept(null)}><ChevronLeft size={16} /> All departments</button>
+        <div className="page-header">
+          <div>
+            <h1>{active}</h1>
+            <p className="page-sub">
+              {plural(list.length, "employee", "employees")} · Avg. composite {score === null ? "—" : score + "%"} · {c.Green} Green, {c.Amber} Amber, {c.Red} Red
+            </p>
+          </div>
+        </div>
+        <div className="roster-grid">
+          {list.map((e) => <EmployeeCard key={e.id} emp={e} onSelect={onSelect} />)}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="page">
+      <div className="page-header">
+        <div>
+          <h1>Departments</h1>
+          <p className="page-sub">Pick a department to see the people on it.</p>
+        </div>
+      </div>
+      {names.length === 0 ? (
+        <div className="panel placeholder-panel"><p>No employees yet. An editor can add people from the Roster page.</p></div>
+      ) : (
+        <div className="dept-grid">
+          {names.map((name) => {
+            const list = groups[name];
+            const c = ragCounts(list);
+            const score = avgComposite(list);
+            return (
+              <button key={name} className="dept-card" onClick={() => onSelectDept(name)}>
+                <div className="dept-card-top">
+                  <div>
+                    <div className="dept-name">{name}</div>
+                    <div className="dept-count">{plural(list.length, "employee", "employees")}</div>
+                  </div>
+                  <div className="dept-score">{score === null ? "—" : score + "%"}</div>
+                </div>
+                <div className="dept-bar"><div className="dept-bar-fill" style={{ width: (score || 0) + "%" }} /></div>
+                <div className="dept-rag">
+                  {["Green", "Amber", "Red"].map((r) => (
+                    <span key={r}><i style={{ background: ragColor(r) }} />{c[r]} {r}</span>
+                  ))}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AccountView({ email, isEditor, onSignOut }) {
+  const [showChangePw, setShowChangePw] = useState(false);
+  return (
+    <div className="page">
+      <div className="page-header">
+        <div>
+          <h1>Account</h1>
+          <p className="page-sub">Your sign-in details and access level.</p>
+        </div>
+      </div>
+
+      <div className="account-card">
+        <div className="account-avatar">{(email || "?")[0].toUpperCase()}</div>
+        <div>
+          <div className="account-email">{email}</div>
+          <span className={"role-badge " + (isEditor ? "editor" : "viewer")}>{isEditor ? "Editor" : "Viewer"}</span>
+          <p className="account-desc">
+            {isEditor
+              ? "You can add, edit, and remove employee profiles."
+              : "You can view profiles but not change them. Ask an admin if you need edit access."}
+          </p>
+        </div>
+      </div>
+
+      <div className="account-actions">
+        <button className="account-btn" onClick={() => setShowChangePw(true)}><Lock size={15} /> Change password</button>
+        <button className="account-btn danger" onClick={onSignOut}>Sign out</button>
+      </div>
+      {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
     </div>
   );
 }
@@ -557,8 +692,13 @@ function AddEmployeeModal({ onClose, onCreate }) {
 
 function RosterTable({ employees, onSelect, isEditor, onAdd }) {
   const [filter, setFilter] = useState("All");
+  const [query, setQuery] = useState("");
   const [showAdd, setShowAdd] = useState(false);
-  const filtered = filter === "All" ? employees : employees.filter((e) => e.rag === filter);
+  const q = query.trim().toLowerCase();
+  const filtered = employees.filter((e) =>
+    (filter === "All" || e.rag === filter) &&
+    (!q || [e.name, e.role, e.department].some((v) => (v || "").toLowerCase().includes(q)))
+  );
 
   return (
     <div className="page">
@@ -568,6 +708,10 @@ function RosterTable({ employees, onSelect, isEditor, onAdd }) {
           <p className="page-sub">All active hires, sortable and filterable by status.</p>
         </div>
         <div className="page-header-actions">
+          <div className="search-box">
+            <Search size={15} />
+            <input placeholder="Search name, role, department..." value={query} onChange={(e) => setQuery(e.target.value)} />
+          </div>
           <div className="filter-pills">
             {["All", "Green", "Amber", "Red"].map((f) => (
               <button key={f} className={`filter-pill ${filter === f ? "active" : ""}`} onClick={() => setFilter(f)}>
@@ -841,7 +985,7 @@ function GenericTable({ rows, columns, onUpdate, editMode, addRowTemplate }) {
   );
 }
 
-function ProfileView({ emp, editMode, onUpdate, onBack, onDelete }) {
+function ProfileView({ emp, editMode, onUpdate, onBack, onDelete, backLabel }) {
   const [tab, setTab] = useState("overview");
 
   const update = (field, value) => onUpdate(emp.id, field, value);
@@ -863,7 +1007,7 @@ function ProfileView({ emp, editMode, onUpdate, onBack, onDelete }) {
   return (
     <div className="page">
       <div className="profile-view-topbar">
-        <button className="back-btn" onClick={onBack}><ChevronLeft size={16} /> Back to roster</button>
+        <button className="back-btn" onClick={onBack}><ChevronLeft size={16} /> {backLabel || "Back to roster"}</button>
         {editMode && (
           <button className="remove-employee-btn" onClick={handleDelete}>
             <Trash2 size={14} /> Remove from roster
@@ -942,25 +1086,6 @@ function ProfileView({ emp, editMode, onUpdate, onBack, onDelete }) {
             />
           )}
         </div>
-      </div>
-    </div>
-  );
-}
-
-/* ============================== SETTINGS (placeholder) ============================== */
-
-function SettingsView() {
-  return (
-    <div className="page">
-      <div className="page-header">
-        <div>
-          <h1>Settings</h1>
-          <p className="page-sub">Role-based permissions, batch management, and integrations will live here.</p>
-        </div>
-      </div>
-      <div className="panel placeholder-panel">
-        <ShieldCheck size={28} color="var(--gold-500)" />
-        <p>This is a placeholder for the next round — real logins, editor/viewer roles, and batch/tab management.</p>
       </div>
     </div>
   );
@@ -1104,7 +1229,9 @@ function App({ session, profile }) {
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("dashboard");
   const [selectedId, setSelectedId] = useState(null);
-  const [collapsed, setCollapsed] = useState(false);
+  const [selectedDept, setSelectedDept] = useState(null);
+  const [profileOrigin, setProfileOrigin] = useState("roster");
+  const [collapsed, setCollapsed] = useState(() => window.innerWidth < 700);
   const [editMode, setEditMode] = useState(isEditor);
 
   useEffect(() => { setEditMode(isEditor); }, [isEditor]);
@@ -1119,7 +1246,12 @@ function App({ session, profile }) {
 
   const selected = useMemo(() => employees.find((e) => e.id === selectedId), [employees, selectedId]);
 
-  const handleSelect = (id) => { setSelectedId(id); setView("profile"); };
+  const handleSelect = (id, origin) => { setSelectedId(id); setProfileOrigin(origin || "roster"); setView("profile"); };
+
+  const navigate = (id) => {
+    if (id === "departments") setSelectedDept(null);
+    setView(id);
+  };
 
   const handleUpdate = (id, field, value) => {
     setEmployees((prev) => prev.map((e) => (e.id === id ? { ...e, [field]: value } : e)));
@@ -1134,7 +1266,7 @@ function App({ session, profile }) {
 
   const handleDeleteEmployee = async (id) => {
     setEmployees((prev) => prev.filter((e) => e.id !== id));
-    setView("roster");
+    setView(profileOrigin);
     const error = await deleteEmployee(id);
     if (error) alert("Failed to remove employee: " + error.message);
   };
@@ -1149,7 +1281,7 @@ function App({ session, profile }) {
     <div className="app-root">
       <style>{CSS}</style>
       <Sidebar
-        view={view} setView={setView} collapsed={collapsed} setCollapsed={setCollapsed}
+        view={view} setView={navigate} collapsed={collapsed} setCollapsed={setCollapsed}
         editMode={editMode} setEditMode={setEditMode} isEditor={isEditor}
         userEmail={session.user.email} onSignOut={handleSignOut}
       />
@@ -1157,8 +1289,9 @@ function App({ session, profile }) {
         <div className="topbar">
           <div className="topbar-title">
             {view === "dashboard" && "Home"}
+            {view === "departments" && (selectedDept ? `Departments · ${selectedDept}` : "Departments")}
             {view === "roster" && "Roster"}
-            {view === "settings" && "Settings"}
+            {view === "account" && "Account"}
             {view === "profile" && selected && `Profile · ${selected.name}`}
           </div>
           <div className={`edit-indicator ${editMode ? "on" : ""}`}>
@@ -1167,13 +1300,20 @@ function App({ session, profile }) {
           </div>
         </div>
 
-        {view === "dashboard" && <Dashboard employees={employees} onSelect={handleSelect} />}
-        {view === "roster" && (
-          <RosterTable employees={employees} onSelect={handleSelect} isEditor={isEditor} onAdd={handleAddEmployee} />
+        {view === "dashboard" && <Dashboard employees={employees} isEditor={isEditor} onNavigate={navigate} />}
+        {view === "departments" && (
+          <DepartmentsView
+            employees={employees} selectedDept={selectedDept}
+            onSelectDept={setSelectedDept} onSelect={(id) => handleSelect(id, "departments")}
+          />
         )}
-        {view === "settings" && <SettingsView />}
+        {view === "roster" && (
+          <RosterTable employees={employees} onSelect={(id) => handleSelect(id, "roster")} isEditor={isEditor} onAdd={handleAddEmployee} />
+        )}
+        {view === "account" && <AccountView email={session.user.email} isEditor={isEditor} onSignOut={handleSignOut} />}
         {view === "profile" && selected && (
-          <ProfileView emp={selected} editMode={editMode} onUpdate={handleUpdate} onBack={() => setView("roster")} onDelete={handleDeleteEmployee} />
+          <ProfileView emp={selected} editMode={editMode} onUpdate={handleUpdate} onBack={() => setView(profileOrigin)}
+            backLabel={profileOrigin === "departments" ? "Back to departments" : "Back to roster"} onDelete={handleDeleteEmployee} />
         )}
       </div>
     </div>
@@ -1446,8 +1586,8 @@ const CSS = `
   background: var(--canvas); color: var(--muted); font-family: 'Inter', sans-serif; font-size: 14px;
 }
 .login-screen {
-  position: relative; min-height: 100vh; display: flex; align-items: center; justify-content: center;
-  background: linear-gradient(180deg, var(--teal-900) 0%, var(--teal-950) 100%); overflow: hidden;
+  position: relative; width: 100%; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: var(--teal-900); overflow: hidden;
 }
 .login-constellation {
   position: absolute; inset: 0; opacity: 0.12;
@@ -1460,9 +1600,9 @@ const CSS = `
 }
 .login-card {
   position: relative; z-index: 1; background: var(--surface); border-radius: 18px; padding: 34px 30px;
-  width: 320px; text-align: center; box-shadow: 0 24px 60px rgba(0,0,0,0.3);
+  width: 360px; max-width: calc(100vw - 32px); text-align: center; box-shadow: 0 24px 60px rgba(0,0,0,0.3);
 }
-.login-logo { display: block; width: 132px; height: 132px; object-fit: contain; margin: -6px auto 10px; }
+.login-logo { display: block; width: 210px; height: 210px; object-fit: contain; margin: -4px auto 8px; }
 .brand-logo { object-fit: contain; flex-shrink: 0; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.35)); }
 .page-header-brand { display: flex; align-items: center; gap: 18px; }
 .page-logo { width: 84px; height: 84px; object-fit: contain; flex-shrink: 0; filter: drop-shadow(0 3px 8px rgba(4,71,75,0.25)); }
@@ -1479,7 +1619,7 @@ const CSS = `
 .login-card button:disabled { opacity: 0.6; cursor: default; }
 .login-error { color: var(--rag-red); font-size: 12px; }
 .login-sent { background: rgba(46,158,109,0.1); color: var(--rag-green); border-radius: 9px; padding: 12px; font-size: 13px; line-height: 1.5; }
-.login-hint { font-size: 11.5px; color: var(--muted); margin: 16px 0 0; }
+.login-card .login-hint { font-size: 11.5px; color: var(--muted); margin: 18px 0 0; }
 
 /* ---------- SIDEBAR ACCOUNT BLOCK ---------- */
 .sidebar-account { padding: 8px 12px; margin-bottom: 8px; }
@@ -1534,7 +1674,91 @@ const CSS = `
 }
 .modal-submit:disabled { opacity: 0.6; cursor: default; }
 
+/* ---------- HOME ---------- */
+.home-hero {
+  position: relative; display: flex; align-items: center; gap: 28px; padding: 30px 38px; margin-bottom: 28px;
+  border-radius: 20px; overflow: hidden; color: #fff;
+  background: linear-gradient(135deg, var(--teal-900) 0%, var(--teal-950) 100%);
+}
+.home-hero::before {
+  content: ""; position: absolute; inset: 0; opacity: 0.12; pointer-events: none;
+  background-image:
+    radial-gradient(circle at 20% 20%, var(--gold-300) 1px, transparent 1px),
+    radial-gradient(circle at 70% 40%, var(--gold-300) 1px, transparent 1px),
+    radial-gradient(circle at 40% 70%, var(--gold-300) 1px, transparent 1px),
+    radial-gradient(circle at 85% 80%, var(--gold-300) 1px, transparent 1px);
+  background-size: 180px 180px;
+}
+.home-logo { position: relative; width: 150px; height: 150px; object-fit: contain; flex-shrink: 0; filter: drop-shadow(0 6px 18px rgba(0,0,0,0.4)); }
+.home-hero-text { position: relative; }
+.home-hero h1 { font-family: 'Space Grotesk', sans-serif; font-size: 32px; line-height: 1.15; font-weight: 700; margin: 0 0 8px; color: #fff; }
+.home-hero h1 span { color: var(--gold-300); }
+.home-hero p { margin: 0; font-size: 14.5px; color: rgba(255,255,255,0.75); }
+
+.nav-tile-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.nav-tile {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 10px; text-align: left; font-family: 'Inter', sans-serif;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 20px; cursor: pointer;
+  transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+.nav-tile:hover { border-color: var(--gold-500); transform: translateY(-2px); box-shadow: 0 8px 20px rgba(4,71,75,0.08); }
+.nav-tile-icon {
+  width: 46px; height: 46px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, var(--teal-900), var(--teal-700)); color: var(--gold-300);
+}
+.nav-tile-title { font-family: 'Space Grotesk', sans-serif; font-size: 17px; font-weight: 600; color: var(--teal-900); margin-top: 4px; }
+.nav-tile-desc { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.nav-tile-meta {
+  display: flex; align-items: center; justify-content: space-between; width: 100%; margin-top: auto; padding-top: 6px;
+  font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 500; color: var(--gold-500);
+}
+
+/* ---------- DEPARTMENTS ---------- */
+.dept-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.dept-card {
+  text-align: left; font-family: 'Inter', sans-serif; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 16px; padding: 18px; cursor: pointer; transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+.dept-card:hover { border-color: var(--gold-500); transform: translateY(-2px); box-shadow: 0 8px 20px rgba(4,71,75,0.08); }
+.dept-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.dept-name { font-family: 'Space Grotesk', sans-serif; font-size: 17px; font-weight: 600; color: var(--teal-900); }
+.dept-count { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.dept-score { font-family: 'IBM Plex Mono', monospace; font-size: 22px; font-weight: 500; color: var(--gold-500); }
+.dept-bar { height: 6px; background: var(--canvas); border-radius: 6px; margin: 14px 0 12px; overflow: hidden; }
+.dept-bar-fill { height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--teal-700), var(--gold-500)); }
+.dept-rag { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+.dept-rag span { display: inline-flex; align-items: center; gap: 5px; }
+.dept-rag i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
+/* ---------- ACCOUNT ---------- */
+.account-card {
+  display: flex; align-items: center; gap: 20px; max-width: 560px; margin-bottom: 16px; padding: 24px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+}
+.account-avatar {
+  width: 64px; height: 64px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, var(--gold-300), var(--gold-500)); color: var(--teal-950);
+  font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 26px;
+}
+.account-email { font-weight: 600; font-size: 15px; color: var(--teal-900); word-break: break-all; margin-bottom: 6px; }
+.role-badge { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 3px 10px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.03em; }
+.role-badge.editor { background: rgba(192,159,37,0.15); color: var(--gold-500); }
+.role-badge.viewer { background: rgba(92,122,125,0.15); color: var(--muted); }
+.account-desc { font-size: 12.5px; color: var(--muted); margin: 8px 0 0; line-height: 1.5; }
+.account-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.account-btn {
+  display: flex; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--border); color: var(--teal-900);
+  border-radius: 10px; padding: 10px 16px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'Inter', sans-serif;
+}
+.account-btn:hover { border-color: var(--gold-500); }
+.account-btn.danger { color: var(--rag-red); }
+.account-btn.danger:hover { border-color: var(--rag-red); }
+
 @media (max-width: 900px) {
+  .nav-tile-grid { grid-template-columns: 1fr; }
+  .home-hero { flex-direction: column; text-align: center; padding: 26px 20px; gap: 16px; }
+  .home-hero h1 { font-size: 26px; }
+  .account-card { flex-direction: column; text-align: center; }
   .stat-grid { grid-template-columns: repeat(2, 1fr); }
   .field-grid { grid-template-columns: repeat(2, 1fr); }
   .two-col { grid-template-columns: 1fr; }
