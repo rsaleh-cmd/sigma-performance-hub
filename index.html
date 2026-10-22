@@ -18,6 +18,7 @@
 <script type="text/plain" id="app-source">
 
 
+
 const { useState, useMemo, useRef, useEffect } = React;
 
 /* ============================== SUPABASE CONNECTION ============================== */
@@ -45,6 +46,7 @@ function rowToEmployee(row) {
     trainer: row.trainer,
     teamLead: row.team_lead,
     email: row.email || "",
+    level: row.level || "Agent",
     batch: row.batch,
     status: row.status,
     rag: row.rag,
@@ -84,6 +86,7 @@ async function insertEmployee(fields) {
     trainer: fields.trainer || "",
     team_lead: fields.teamLead || "",
     email: (fields.email || "").trim() || null,
+    level: fields.level || "Agent",
     batch: fields.batch || "",
     status: fields.status || "Nesting",
     rag: fields.rag || "Green",
@@ -157,6 +160,7 @@ const UserCircle = (p) => <Icon {...p}><circle cx="12" cy="12" r="9" /><circle c
 
 const STATUS_OPTIONS = ["Nesting", "Live", "At Risk", "On Leave", "Graduated"];
 const RAG_OPTIONS = ["Green", "Amber", "Red"];
+const LEVEL_OPTIONS = ["Agent", "Leader"];
 
 /* ============================== HELPERS ============================== */
 
@@ -423,7 +427,7 @@ function plural(n, one, many) {
   return n + " " + (n === 1 ? one : many);
 }
 
-function Dashboard({ employees, isEditor, onNavigate }) {
+function Dashboard({ employees, roleLabel, onNavigate }) {
   const counts = ragCounts(employees);
   const overall = avgComposite(employees);
   const deptCount = Object.keys(groupByDepartment(employees)).length;
@@ -437,7 +441,7 @@ function Dashboard({ employees, isEditor, onNavigate }) {
       meta: plural(employees.length, "employee", "employees") },
     { id: "account", title: "Account", icon: UserCircle,
       desc: "Your sign-in details, access level, and password.",
-      meta: isEditor ? "Editor" : "Viewer" },
+      meta: roleLabel },
   ];
 
   return (
@@ -502,7 +506,7 @@ function EmployeeCard({ emp, onSelect }) {
     <button className="employee-card" onClick={() => onSelect(emp.id)}>
       <OrbitAvatar photo={emp.photo} name={emp.name} score={compositeScore(emp)} />
       <div className="employee-card-info">
-        <div className="employee-name">{emp.name}</div>
+        <div className="employee-name">{emp.name}{emp.level === "Leader" && <span className="level-tag">Leader</span>}</div>
         <div className="employee-role">{emp.role}</div>
         <div className="employee-meta">
           <StatusPill status={emp.status} />
@@ -584,6 +588,7 @@ function DepartmentsView({ employees, selectedDept, onSelectDept, onSelect }) {
 const ROLE_INFO = {
   editor: { label: "Editor", desc: "You can add, edit, and remove employee profiles." },
   viewer: { label: "Viewer", desc: "You can view profiles but not change them. Ask an admin if you need edit access." },
+  leader: { label: "Leader", desc: "You can edit agents' scores and notes. Your own profile and other leaders' profiles are edited by an admin." },
   agent: { label: "Agent", desc: "You can see your own performance profile and the monthly leaderboard." },
 };
 
@@ -622,7 +627,7 @@ function AccountView({ email, role, onSignOut }) {
 function AddEmployeeModal({ onClose, onCreate }) {
   const [fields, setFields] = useState({
     name: "", email: "", role: "", department: "", hireDate: "", trainer: "", teamLead: "", batch: "",
-    status: "Nesting", rag: "Green",
+    status: "Nesting", rag: "Green", level: "Agent",
   });
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setFields((f) => ({ ...f, [k]: v }));
@@ -687,6 +692,12 @@ function AddEmployeeModal({ onClose, onCreate }) {
               <span className="field-label">Overall RAG</span>
               <select className="field-input" value={fields.rag} onChange={(e) => set("rag", e.target.value)}>
                 {RAG_OPTIONS.map((s) => <option key={s}>{s}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <span className="field-label">Level</span>
+              <select className="field-input" value={fields.level} onChange={(e) => set("level", e.target.value)}>
+                {LEVEL_OPTIONS.map((s) => <option key={s}>{s}</option>)}
               </select>
             </div>
           </div>
@@ -762,7 +773,7 @@ function RosterTable({ employees, onSelect, isEditor, onAdd }) {
               <tr key={e.id} onClick={() => onSelect(e.id)}>
                 <td className="name-cell">
                   <OrbitAvatar photo={e.photo} name={e.name} score={compositeScore(e)} size={36} />
-                  {e.name}
+                  {e.name}{e.level === "Leader" && <span className="level-tag">Leader</span>}
                 </td>
                 <td>{e.role}</td>
                 <td>{e.department}</td>
@@ -782,8 +793,9 @@ function RosterTable({ employees, onSelect, isEditor, onAdd }) {
 
 /* ============================== PROFILE VIEW ============================== */
 
-function ProfileHeader({ emp, editMode, onUpdate, onPhoto }) {
+function ProfileHeader({ emp, editMode, onUpdate, onPhoto, identityEditable }) {
   const fileRef = useRef(null);
+  const idEdit = identityEditable === undefined ? editMode : identityEditable;
   return (
     <div className="profile-header">
       <div className="profile-photo-wrap">
@@ -823,7 +835,8 @@ function ProfileHeader({ emp, editMode, onUpdate, onPhoto }) {
           <EditableField label="Batch" value={emp.batch} editMode={editMode} onChange={(v) => onUpdate("batch", v)} />
           <EditableField label="Status" value={emp.status} editMode={editMode} options={STATUS_OPTIONS} onChange={(v) => onUpdate("status", v)} />
           <EditableField label="Overall RAG" value={emp.rag} editMode={editMode} options={RAG_OPTIONS} onChange={(v) => onUpdate("rag", v)} />
-          <EditableField label="Work Email" value={emp.email} editMode={editMode} type="email" onChange={(v) => onUpdate("email", v)} />
+          <EditableField label="Work Email" value={emp.email} editMode={idEdit} type="email" onChange={(v) => onUpdate("email", v)} />
+          <EditableField label="Level" value={emp.level} editMode={idEdit} options={LEVEL_OPTIONS} onChange={(v) => onUpdate("level", v)} />
         </div>
       </div>
     </div>
@@ -998,7 +1011,7 @@ function GenericTable({ rows, columns, onUpdate, editMode, addRowTemplate }) {
   );
 }
 
-function ProfileView({ emp, editMode, onUpdate, onBack, onDelete, backLabel }) {
+function ProfileView({ emp, editMode, onUpdate, onBack, onDelete, backLabel, canDelete, identityEditable, lockedReason }) {
   const [tab, setTab] = useState("overview");
 
   const update = (field, value) => onUpdate(emp.id, field, value);
@@ -1019,12 +1032,12 @@ function ProfileView({ emp, editMode, onUpdate, onBack, onDelete, backLabel }) {
 
   return (
     <div className="page">
-      {(onBack || editMode) && (
+      {(onBack || canDelete) && (
         <div className="profile-view-topbar">
           {onBack
             ? <button className="back-btn" onClick={onBack}><ChevronLeft size={16} /> {backLabel || "Back to roster"}</button>
             : <span />}
-          {editMode && (
+          {canDelete && (
             <button className="remove-employee-btn" onClick={handleDelete}>
               <Trash2 size={14} /> Remove from roster
             </button>
@@ -1033,7 +1046,8 @@ function ProfileView({ emp, editMode, onUpdate, onBack, onDelete, backLabel }) {
       )}
 
       <div className="profile-card">
-        <ProfileHeader emp={emp} editMode={editMode} onUpdate={update} onPhoto={updatePhoto} />
+        {lockedReason && <div className="locked-note"><Lock size={14} /> {lockedReason}</div>}
+        <ProfileHeader emp={emp} editMode={editMode} onUpdate={update} onPhoto={updatePhoto} identityEditable={identityEditable} />
         <TabBar tab={tab} setTab={setTab} />
 
         <div className="tab-content">
@@ -1515,7 +1529,17 @@ function AgentApp({ session, profile }) {
 /* ============================== APP ============================== */
 
 function App({ session, profile }) {
-  const isEditor = profile.role === "editor";
+  const isEditor = profile.role === "editor";          // admin
+  const isLeader = profile.role === "leader";
+  const canEditAny = isEditor || isLeader;
+  const roleInfo = ROLE_INFO[profile.role] || ROLE_INFO.viewer;
+  const myEmail = (session.user.email || "").toLowerCase();
+  const isSelf = (emp) => !!emp.email && emp.email.toLowerCase() === myEmail;
+  // Admins edit everyone. Leaders edit Agent profiles only, and never their own.
+  const canEditRecord = (emp) => isEditor || (isLeader && emp.level === "Agent" && !isSelf(emp));
+  const lockReason = (emp) => (isSelf(emp)
+    ? "This is your own profile — an admin edits it."
+    : "Leader profiles are edited by an admin.");
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("dashboard");
@@ -1523,9 +1547,9 @@ function App({ session, profile }) {
   const [selectedDept, setSelectedDept] = useState(null);
   const [profileOrigin, setProfileOrigin] = useState("roster");
   const [collapsed, setCollapsed] = useState(() => window.innerWidth < 700);
-  const [editMode, setEditMode] = useState(isEditor);
+  const [editMode, setEditMode] = useState(canEditAny);
 
-  useEffect(() => { setEditMode(isEditor); }, [isEditor]);
+  useEffect(() => { setEditMode(canEditAny); }, [canEditAny]);
 
   useEffect(() => {
     let active = true;
@@ -1536,6 +1560,7 @@ function App({ session, profile }) {
   }, []);
 
   const selected = useMemo(() => employees.find((e) => e.id === selectedId), [employees, selectedId]);
+  const selectedEditable = selected ? canEditRecord(selected) : false;
 
   const handleSelect = (id, origin) => { setSelectedId(id); setProfileOrigin(origin || "roster"); setView("profile"); };
 
@@ -1577,7 +1602,7 @@ function App({ session, profile }) {
       <style>{CSS}</style>
       <Sidebar
         view={view} setView={navigate} collapsed={collapsed} setCollapsed={setCollapsed}
-        editMode={editMode} setEditMode={setEditMode} isEditor={isEditor}
+        editMode={editMode} setEditMode={setEditMode} isEditor={canEditAny} roleLabel={roleInfo.label}
         userEmail={session.user.email} onSignOut={handleSignOut}
       />
       <div className="main-area">
@@ -1595,7 +1620,7 @@ function App({ session, profile }) {
           </div>
         </div>
 
-        {view === "dashboard" && <Dashboard employees={employees} isEditor={isEditor} onNavigate={navigate} />}
+        {view === "dashboard" && <Dashboard employees={employees} roleLabel={roleInfo.label} onNavigate={navigate} />}
         {view === "departments" && (
           <DepartmentsView
             employees={employees} selectedDept={selectedDept}
@@ -1607,8 +1632,10 @@ function App({ session, profile }) {
         )}
         {view === "account" && <AccountView email={session.user.email} role={profile.role} onSignOut={handleSignOut} />}
         {view === "profile" && selected && (
-          <ProfileView emp={selected} editMode={editMode} onUpdate={handleUpdate} onBack={() => setView(profileOrigin)}
-            backLabel={profileOrigin === "departments" ? "Back to departments" : "Back to roster"} onDelete={handleDeleteEmployee} />
+          <ProfileView emp={selected} editMode={editMode && selectedEditable} onUpdate={handleUpdate} onBack={() => setView(profileOrigin)}
+            backLabel={profileOrigin === "departments" ? "Back to departments" : "Back to roster"} onDelete={handleDeleteEmployee}
+            canDelete={editMode && isEditor} identityEditable={editMode && isEditor}
+            lockedReason={editMode && canEditAny && !selectedEditable ? lockReason(selected) : null} />
         )}
       </div>
     </div>
@@ -2089,6 +2116,9 @@ const CSS = `
 .leader-gap { text-align: center; color: var(--muted); letter-spacing: 6px; margin: 12px 0; font-size: 12px; }
 .leader-note { background: rgba(192,159,37,0.1); color: var(--teal-900); border-radius: 12px; padding: 12px 16px; font-size: 13px; line-height: 1.5; margin-bottom: 20px; }
 .field-hint { font-size: 11px; color: var(--muted); margin-top: 3px; line-height: 1.4; }
+.role-badge.leader { background: rgba(4,71,75,0.12); color: var(--teal-900); }
+.level-tag { display: inline-block; margin-left: 8px; font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; background: rgba(12,107,112,0.14); color: var(--teal-700); padding: 2px 7px; border-radius: 10px; vertical-align: middle; }
+.locked-note { display: flex; align-items: center; gap: 8px; background: rgba(192,159,37,0.12); color: var(--teal-900); font-size: 12.5px; font-weight: 500; padding: 10px 28px; border-bottom: 1px solid var(--border); }
 .role-badge.agent { background: rgba(12,107,112,0.12); color: var(--teal-700); }
 
 @media (max-width: 900px) {
