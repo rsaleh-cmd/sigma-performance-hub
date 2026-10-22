@@ -1961,8 +1961,16 @@ const CSS = `
   flex-direction: column;
   justify-content: space-between;
   padding: 20px 14px;
-  position: relative;
-  overflow: hidden;
+  /* stay pinned to the screen while the page scrolls */
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  height: 100vh;
+  height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.25) transparent;
   transition: width 0.25s ease;
   flex-shrink: 0;
 }
