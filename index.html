@@ -152,6 +152,7 @@ const X = (p) => <Icon {...p}><path d="M6 6l12 12M18 6L6 18" /></Icon>;
 const Camera = (p) => <Icon {...p}><rect x="3" y="7" width="18" height="13" rx="2" /><path d="M8 7l1.5-2.5h5L16 7" /><circle cx="12" cy="13.5" r="3.5" /></Icon>;
 const Menu = (p) => <Icon {...p}><path d="M4 7h16M4 12h16M4 17h16" /></Icon>;
 const Trophy = (p) => <Icon {...p}><path d="M7 4h10v5a5 5 0 01-10 0V4z" /><path d="M7 6H4v2a3 3 0 003 3M17 6h3v2a3 3 0 01-3 3" /><path d="M12 14v4M8 20h8" /></Icon>;
+const Clock = (p) => <Icon {...p}><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15.5 14" /></Icon>;
 const HomeIcon = (p) => <Icon {...p}><path d="M3 11.5L12 4l9 7.5" /><path d="M5 10v9a1 1 0 001 1h4v-5h4v5h4a1 1 0 001-1v-9" /></Icon>;
 const UserCircle = (p) => <Icon {...p}><circle cx="12" cy="12" r="9" /><circle cx="12" cy="10" r="3" /><path d="M6.2 18.2c1.2-2.2 3.3-3.2 5.8-3.2s4.6 1 5.8 3.2" /></Icon>;
 
@@ -597,9 +598,11 @@ const ROLE_INFO = {
   agent: { label: "Agent", desc: "You can see your own performance profile and the monthly leaderboard." },
 };
 
-function AccountView({ email, role, onSignOut }) {
+function AccountView({ email, role, onSignOut, me }) {
   const [showChangePw, setShowChangePw] = useState(false);
   const info = ROLE_INFO[role] || ROLE_INFO.viewer;
+  const position = me && me.role ? me.role : "";
+  const canBeLinked = role === "agent" || role === "leader";
   return (
     <div className="page">
       <div className="page-header">
@@ -610,11 +613,20 @@ function AccountView({ email, role, onSignOut }) {
       </div>
 
       <div className="account-card">
-        <div className="account-avatar">{(email || "?")[0].toUpperCase()}</div>
-        <div>
-          <div className="account-email">{email}</div>
+        <div className="account-avatar">
+          {me && me.photo
+            ? <img src={me.photo} alt={me.name} />
+            : (me ? initials(me.name) : (email || "?")[0].toUpperCase())}
+        </div>
+        <div className="account-main">
+          {me && <div className="account-name">{me.name}</div>}
+          {position && <div className="account-position">{position}</div>}
+          <div className={"account-email" + (me ? "" : " primary")}>{email}</div>
           <span className={"role-badge " + (ROLE_INFO[role] ? role : "viewer")}>{info.label}</span>
           <p className="account-desc">{info.desc}</p>
+          {!me && canBeLinked && (
+            <p className="account-desc">Your login isn't linked to an employee profile yet, so your name, photo and position aren't showing. Ask an admin to add this email to your profile.</p>
+          )}
         </div>
       </div>
 
@@ -848,9 +860,245 @@ function ProfileHeader({ emp, editMode, onUpdate, onPhoto, identityEditable }) {
   );
 }
 
+/* ============================== HISTORY TAB ============================== */
+
+const HISTORY_TYPES = {
+  qa: { label: "QA check", color: "#04474B" },
+  training: { label: "Training", color: "#4A9AA0" },
+  assessment: { label: "Assessment", color: "#C09F25" },
+  pulse: { label: "Pulse check", color: "#2E9E6D" },
+};
+
+const HISTORY_FILTERS = [
+  { id: "all", label: "All" },
+  { id: "qa", label: "QA checks" },
+  { id: "training", label: "Training" },
+  { id: "assessment", label: "Assessments" },
+  { id: "pulse", label: "Pulse checks" },
+];
+
+function parseDay(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || "");
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function toScore(v) {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return isFinite(n) ? n : null;
+}
+
+function fmtDay(t) {
+  return new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function buildHistory(emp) {
+  const raw = [];
+  const add = (type, r, named, fields) => raw.push(Object.assign({ type: type, date: r.date || "", named: named }, fields));
+
+  (emp.qa || []).forEach((r) => add("qa", r, !!r.callId, {
+    title: r.callId ? "Call " + r.callId : "QA check", sub: "",
+    score: toScore(r.overall), details: [{ label: "", text: r.feedback }],
+  }));
+  (emp.training || []).forEach((r) => add("training", r, !!r.topic, {
+    title: r.topic || "Training session", sub: r.trainer ? "Trainer: " + r.trainer : "",
+    score: toScore(r.score), details: [{ label: "", text: r.notes }],
+  }));
+  (emp.assessments || []).forEach((r) => add("assessment", r, !!(r.result || r.evaluator), {
+    title: "Assessment call" + (r.result ? " · " + r.result : ""), sub: r.evaluator ? "Evaluator: " + r.evaluator : "",
+    score: toScore(r.score), details: [{ label: "Strengths", text: r.strengths }, { label: "To improve", text: r.improve }],
+  }));
+  (emp.pulseChecks || []).forEach((r) => add("pulse", r, !!r.scenario, {
+    title: r.scenario || "Pulse check", sub: r.week ? "Week " + r.week : "",
+    score: toScore(r.score), details: [{ label: "", text: r.feedback }],
+  }));
+
+  const items = raw.map((it) => {
+    const day = parseDay(it.date);
+    const details = it.details.filter((d) => d.text && String(d.text).trim());
+    return Object.assign({}, it, { day: day, time: day ? day.getTime() : null, details: details, delta: null });
+  }).filter((it) => {
+    // skip the empty rows an editor may have added but not filled in yet
+    const blank = it.time === null && !(it.score > 0) && it.details.length === 0 && !it.named;
+    return !blank;
+  });
+
+  // change versus the previous entry of the same kind
+  Object.keys(HISTORY_TYPES).forEach((type) => {
+    const series = items.filter((i) => i.type === type && i.time !== null && i.score !== null)
+      .sort((a, b) => a.time - b.time);
+    for (let k = 1; k < series.length; k++) {
+      series[k].delta = Math.round((series[k].score - series[k - 1].score) * 10) / 10;
+    }
+  });
+
+  items.sort((a, b) => {
+    if (a.time === null && b.time === null) return 0;
+    if (a.time === null) return 1;
+    if (b.time === null) return -1;
+    return b.time - a.time;
+  });
+  return items;
+}
+
+function HistoryChart({ items }) {
+  const pts = items.filter((it) => it.time !== null && it.score !== null);
+  if (pts.length === 0) return null;
+
+  const W = 640, H = 210, L = 38, R = 16, T = 14, B = 30;
+  const times = pts.map((p) => p.time);
+  const scores = pts.map((p) => p.score);
+  const tMin = Math.min.apply(null, times), tMax = Math.max.apply(null, times);
+  const sMin = Math.min.apply(null, scores), sMax = Math.max.apply(null, scores);
+  const yMax = Math.max(100, Math.ceil(sMax / 10) * 10);
+  let yMin = Math.max(0, Math.floor((sMin - 6) / 10) * 10);
+  if (yMax - yMin < 30) yMin = Math.max(0, yMax - 30);
+
+  const x = (t) => (tMax === tMin ? L + (W - L - R) / 2 : L + ((t - tMin) / (tMax - tMin)) * (W - L - R));
+  const y = (v) => T + (1 - (v - yMin) / (yMax - yMin)) * (H - T - B);
+  const step = yMax - yMin > 50 ? 20 : 10;
+  const ticks = [];
+  for (let v = yMin; v <= yMax; v += step) ticks.push(v);
+
+  const types = Object.keys(HISTORY_TYPES).filter((t) => pts.some((p) => p.type === t));
+  const series = types.map((t) => ({
+    type: t,
+    pts: pts.filter((p) => p.type === t).sort((a, b) => a.time - b.time),
+  }));
+
+  return (
+    <div className="hist-chart-wrap">
+      <svg className="hist-chart" viewBox={"0 0 " + W + " " + H} role="img" aria-label="Score trend over time">
+        {ticks.map((v) => (
+          <g key={v}>
+            <line className="hist-grid" x1={L} x2={W - R} y1={y(v)} y2={y(v)} />
+            <text className="hist-axis" x={L - 7} y={y(v) + 3.5} textAnchor="end">{v}</text>
+          </g>
+        ))}
+        {series.map((s) => s.pts.length > 1 && (
+          <polyline
+            key={s.type} fill="none" stroke={HISTORY_TYPES[s.type].color} strokeWidth="2"
+            strokeLinejoin="round" strokeLinecap="round" opacity="0.85"
+            points={s.pts.map((p) => x(p.time) + "," + y(p.score)).join(" ")}
+          />
+        ))}
+        {pts.map((p, i) => (
+          <circle key={i} className="hist-point" cx={x(p.time)} cy={y(p.score)} r="4.5"
+            fill={HISTORY_TYPES[p.type].color} stroke="#fff" strokeWidth="1.5">
+            <title>{HISTORY_TYPES[p.type].label + ": " + p.title + " · " + p.date + " · " + p.score + "%"}</title>
+          </circle>
+        ))}
+        <text className="hist-axis" x={L} y={H - 8}>{fmtDay(tMin)}</text>
+        {tMax !== tMin && <text className="hist-axis" x={W - R} y={H - 8} textAnchor="end">{fmtDay(tMax)}</text>}
+      </svg>
+      <div className="hist-legend">
+        {types.map((t) => (
+          <span key={t}><i style={{ background: HISTORY_TYPES[t].color }} />{HISTORY_TYPES[t].label}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HistoryTab({ emp }) {
+  const [filter, setFilter] = useState("all");
+  const all = useMemo(() => buildHistory(emp), [emp]);
+
+  if (all.length === 0) {
+    return (
+      <div className="panel placeholder-panel">
+        <Clock size={28} color="var(--gold-500)" />
+        <p>No history yet. QA checks, training sessions, assessments and pulse checks will show up here as they're recorded.</p>
+      </div>
+    );
+  }
+
+  const counts = { all: all.length };
+  Object.keys(HISTORY_TYPES).forEach((t) => { counts[t] = all.filter((i) => i.type === t).length; });
+  const shown = filter === "all" ? all : all.filter((i) => i.type === filter);
+  const scored = shown.filter((i) => i.score !== null);
+  const avgScore = scored.length ? Math.round((scored.reduce((s, i) => s + i.score, 0) / scored.length) * 10) / 10 : null;
+  const best = scored.length ? Math.max.apply(null, scored.map((i) => i.score)) : null;
+  const latestItem = scored.find((i) => i.time !== null) || scored[0] || null;
+  const pct = (v) => (v === null ? "—" : v + "%");
+
+  // group the list by month (undated entries go last)
+  const groups = [];
+  shown.forEach((it) => {
+    const key = it.day ? it.day.getFullYear() + "-" + it.day.getMonth() : "undated";
+    const label = it.day ? it.day.toLocaleString("en-US", { month: "long", year: "numeric" }) : "Undated";
+    let g = groups[groups.length - 1];
+    if (!g || g.key !== key) { g = { key: key, label: label, items: [] }; groups.push(g); }
+    g.items.push(it);
+  });
+
+  return (
+    <div className="hist">
+      <div className="hist-filters">
+        {HISTORY_FILTERS.map((f) => (
+          <button key={f.id} className={"hist-chip" + (filter === f.id ? " active" : "")} onClick={() => setFilter(f.id)}>
+            {f.label} <span className="n">{counts[f.id]}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="summary-cards">
+        <div className="summary-card"><div className="summary-label">Entries</div><div className="summary-value">{shown.length}</div></div>
+        <div className="summary-card"><div className="summary-label">Avg. score</div><div className="summary-value">{pct(avgScore)}</div></div>
+        <div className="summary-card"><div className="summary-label">Best</div><div className="summary-value">{pct(best)}</div></div>
+        <div className="summary-card highlight"><div className="summary-label">Latest</div><div className="summary-value">{pct(latestItem ? latestItem.score : null)}</div></div>
+      </div>
+
+      {shown.length === 0 ? (
+        <div className="panel placeholder-panel"><p>Nothing recorded in this category yet.</p></div>
+      ) : (
+        <div>
+          <HistoryChart items={shown} />
+          <div className="hist-timeline">
+            {groups.map((g) => (
+              <div key={g.key}>
+                <div className="hist-month">{g.label}</div>
+                <div className="hist-list">
+                  {g.items.map((it, idx) => {
+                    const t = HISTORY_TYPES[it.type];
+                    return (
+                      <div key={it.type + "-" + idx} className="hist-item" style={{ borderLeftColor: t.color }}>
+                        <div className="hist-body">
+                          <div className="hist-top">
+                            <span className="hist-type" style={{ color: t.color, background: t.color + "1f" }}>{t.label}</span>
+                            <span className="hist-title">{it.title}</span>
+                            <span className="hist-date">{it.date || "No date"}</span>
+                          </div>
+                          {it.sub && <div className="hist-sub">{it.sub}</div>}
+                          {it.details.map((d, k) => (
+                            <div key={k} className="hist-detail">{d.label && <b>{d.label}</b>}{d.text}</div>
+                          ))}
+                        </div>
+                        <div className="hist-score">
+                          {it.score === null ? "—" : it.score + "%"}
+                          {it.delta !== null && it.delta !== 0 && (
+                            <span className={"hist-delta " + (it.delta > 0 ? "up" : "down")}>{it.delta > 0 ? "+" : ""}{it.delta}</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TabBar({ tab, setTab }) {
   const tabs = [
     { id: "overview", label: "Overview", icon: Award },
+    { id: "history", label: "History", icon: Clock },
     { id: "training", label: "Training", icon: GraduationCap },
     { id: "assessments", label: "Assessments", icon: CalendarDays },
     { id: "pulse", label: "Pulse Checks", icon: PhoneCall },
@@ -1057,6 +1305,8 @@ function ProfileView({ emp, editMode, onUpdate, onBack, onDelete, backLabel, can
 
         <div className="tab-content">
           {tab === "overview" && <OverviewTab emp={emp} editMode={editMode} onUpdate={update} />}
+
+          {tab === "history" && <HistoryTab emp={emp} />}
 
           {tab === "training" && (
             <GenericTable
@@ -1525,7 +1775,7 @@ function AgentApp({ session, profile }) {
         {view === "home" && <AgentHome me={me} email={session.user.email} onNavigate={setView} />}
         {view === "performance" && me && <ProfileView emp={me} editMode={false} onUpdate={() => {}} />}
         {view === "leaderboard" && <LeaderboardView />}
-        {view === "account" && <AccountView email={session.user.email} role="agent" onSignOut={handleSignOut} />}
+        {view === "account" && <AccountView email={session.user.email} role="agent" me={me} onSignOut={handleSignOut} />}
       </div>
     </div>
   );
@@ -1566,7 +1816,7 @@ function App({ session, profile }) {
 
   const selected = useMemo(() => employees.find((e) => e.id === selectedId), [employees, selectedId]);
   const selectedEditable = selected ? canEditRecord(selected) : false;
-  const me = isLeader ? (employees.find(isSelf) || null) : null;
+  const me = employees.find(isSelf) || null;
 
   const handleSelect = (id, origin) => { setSelectedId(id); setProfileOrigin(origin || "roster"); setView("profile"); };
 
@@ -1659,7 +1909,7 @@ function App({ session, profile }) {
               </div>
             </div>
           ))}
-        {view === "account" && <AccountView email={session.user.email} role={profile.role} onSignOut={handleSignOut} />}
+        {view === "account" && <AccountView email={session.user.email} role={profile.role} me={me} onSignOut={handleSignOut} />}
         {view === "profile" && selected && (
           <ProfileView emp={selected} editMode={editMode && selectedEditable} onUpdate={handleUpdate} onBack={() => setView(profileOrigin)}
             backLabel={profileOrigin === "departments" ? "Back to departments" : "Back to roster"} onDelete={handleDeleteEmployee}
@@ -2083,15 +2333,20 @@ const CSS = `
 
 /* ---------- ACCOUNT ---------- */
 .account-card {
-  display: flex; align-items: center; gap: 20px; max-width: 560px; margin-bottom: 16px; padding: 24px;
+  display: flex; align-items: center; gap: 24px; max-width: 620px; margin-bottom: 16px; padding: 24px;
   background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
 }
 .account-avatar {
-  width: 64px; height: 64px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  width: 88px; height: 88px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; overflow: hidden;
   background: linear-gradient(135deg, var(--gold-300), var(--gold-500)); color: var(--teal-950);
-  font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 26px;
+  font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 30px; box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--gold-500);
 }
-.account-email { font-weight: 600; font-size: 15px; color: var(--teal-900); word-break: break-all; margin-bottom: 6px; }
+.account-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.account-main { min-width: 0; }
+.account-name { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 21px; color: var(--teal-900); line-height: 1.2; }
+.account-position { font-size: 13.5px; font-weight: 600; color: var(--teal-700); margin-top: 3px; }
+.account-email { font-weight: 500; font-size: 13px; color: var(--muted); word-break: break-all; margin: 4px 0 10px; }
+.account-email.primary { font-weight: 600; font-size: 15px; color: var(--teal-900); margin: 0 0 6px; }
 .role-badge { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 3px 10px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.03em; }
 .role-badge.editor { background: rgba(192,159,37,0.15); color: var(--gold-500); }
 .role-badge.viewer { background: rgba(92,122,125,0.15); color: var(--muted); }
@@ -2145,6 +2400,35 @@ const CSS = `
 .leader-gap { text-align: center; color: var(--muted); letter-spacing: 6px; margin: 12px 0; font-size: 12px; }
 .leader-note { background: rgba(192,159,37,0.1); color: var(--teal-900); border-radius: 12px; padding: 12px 16px; font-size: 13px; line-height: 1.5; margin-bottom: 20px; }
 .field-hint { font-size: 11px; color: var(--muted); margin-top: 3px; line-height: 1.4; }
+/* ---------- HISTORY ---------- */
+.hist { display: flex; flex-direction: column; gap: 20px; }
+.hist-filters { display: flex; gap: 8px; flex-wrap: wrap; }
+.hist-chip { display: flex; align-items: center; gap: 7px; background: var(--surface); border: 1px solid var(--border); color: var(--muted); padding: 6px 14px; border-radius: 20px; font-size: 12.5px; font-weight: 500; cursor: pointer; font-family: 'Inter', sans-serif; }
+.hist-chip .n { font-family: 'IBM Plex Mono', monospace; font-size: 11px; opacity: 0.8; }
+.hist-chip:hover { border-color: var(--gold-500); }
+.hist-chip.active { background: var(--teal-900); color: #fff; border-color: var(--teal-900); }
+.hist-chart-wrap { background: var(--canvas); border-radius: 12px; padding: 14px 14px 10px; overflow-x: auto; margin-bottom: 22px; }
+.hist-chart { display: block; width: 100%; min-width: 520px; height: auto; }
+.hist-grid { stroke: var(--border); stroke-width: 1; }
+.hist-axis { fill: var(--muted); font-size: 10.5px; font-family: 'IBM Plex Mono', monospace; }
+.hist-legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 6px; font-size: 11.5px; color: var(--muted); }
+.hist-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.hist-legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.hist-month { font-family: 'Space Grotesk', sans-serif; font-size: 13px; font-weight: 600; color: var(--teal-900); margin: 4px 0 10px; letter-spacing: 0.02em; }
+.hist-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+.hist-item { display: flex; align-items: flex-start; gap: 14px; background: var(--surface); border: 1px solid var(--border); border-left-width: 4px; border-radius: 12px; padding: 12px 16px; }
+.hist-body { flex: 1; min-width: 0; }
+.hist-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.hist-type { font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 8px; border-radius: 10px; }
+.hist-title { font-weight: 600; font-size: 13.5px; color: var(--teal-900); }
+.hist-date { font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: var(--muted); margin-left: auto; }
+.hist-sub { font-size: 12px; color: var(--muted); margin-top: 3px; }
+.hist-detail { font-size: 12.5px; color: var(--ink); margin-top: 6px; line-height: 1.5; }
+.hist-detail b { font-weight: 600; color: var(--teal-700); margin-right: 6px; }
+.hist-score { text-align: right; font-family: 'IBM Plex Mono', monospace; font-weight: 500; font-size: 17px; color: var(--gold-500); min-width: 64px; }
+.hist-delta { display: block; font-size: 11px; font-weight: 500; margin-top: 2px; }
+.hist-delta.up { color: var(--rag-green); }
+.hist-delta.down { color: var(--rag-red); }
 .role-badge.leader { background: rgba(4,71,75,0.12); color: var(--teal-900); }
 .level-tag { display: inline-block; margin-left: 8px; font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; background: rgba(12,107,112,0.14); color: var(--teal-700); padding: 2px 7px; border-radius: 10px; vertical-align: middle; }
 .locked-note { display: flex; align-items: center; gap: 8px; background: rgba(192,159,37,0.12); color: var(--teal-900); font-size: 12.5px; font-weight: 500; padding: 10px 28px; border-bottom: 1px solid var(--border); }
@@ -2152,6 +2436,11 @@ const CSS = `
 
 @media (max-width: 900px) {
   .page { padding: 22px 16px 48px; }
+  .profile-header { flex-direction: column; align-items: center; padding: 22px 16px; gap: 14px; }
+  .profile-header-fields { width: 100%; }
+  .profile-title-row { flex-wrap: wrap; justify-content: center; }
+  .tab-content { padding: 18px 14px 26px; }
+  .tab-bar { padding: 0 8px; }
   .podium { gap: 8px; margin-top: 34px; }
   .podium-card { padding: 26px 6px 14px; }
   .podium-name { font-size: 12.5px; }
