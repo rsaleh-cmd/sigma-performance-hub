@@ -427,7 +427,7 @@ function plural(n, one, many) {
   return n + " " + (n === 1 ? one : many);
 }
 
-function Dashboard({ employees, roleLabel, onNavigate }) {
+function Dashboard({ employees, roleLabel, onNavigate, showMine, mine }) {
   const counts = ragCounts(employees);
   const overall = avgComposite(employees);
   const deptCount = Object.keys(groupByDepartment(employees)).length;
@@ -443,6 +443,11 @@ function Dashboard({ employees, roleLabel, onNavigate }) {
       desc: "Your sign-in details, access level, and password.",
       meta: roleLabel },
   ];
+  if (showMine) {
+    tiles.unshift({ id: "performance", title: "My Performance", icon: TrendingUp,
+      desc: "Your own scores, feedback, strengths, and action plan (view only).",
+      meta: mine ? (compositeScore(mine) ? "Composite " + compositeScore(mine) + "%" : "No scores yet") : "Not linked yet" });
+  }
 
   return (
     <div className="page">
@@ -1561,6 +1566,7 @@ function App({ session, profile }) {
 
   const selected = useMemo(() => employees.find((e) => e.id === selectedId), [employees, selectedId]);
   const selectedEditable = selected ? canEditRecord(selected) : false;
+  const me = isLeader ? (employees.find(isSelf) || null) : null;
 
   const handleSelect = (id, origin) => { setSelectedId(id); setProfileOrigin(origin || "roster"); setView("profile"); };
 
@@ -1603,6 +1609,13 @@ function App({ session, profile }) {
       <Sidebar
         view={view} setView={navigate} collapsed={collapsed} setCollapsed={setCollapsed}
         editMode={editMode} setEditMode={setEditMode} isEditor={canEditAny} roleLabel={roleInfo.label}
+        items={isLeader ? [
+          { id: "dashboard", label: "Home", icon: HomeIcon },
+          { id: "performance", label: "My Performance", icon: TrendingUp },
+          { id: "departments", label: "Departments", icon: LayoutDashboard },
+          { id: "roster", label: "Roster", icon: Users },
+          { id: "account", label: "Account", icon: UserCircle },
+        ] : undefined}
         userEmail={session.user.email} onSignOut={handleSignOut}
       />
       <div className="main-area">
@@ -1611,6 +1624,7 @@ function App({ session, profile }) {
             {view === "dashboard" && "Home"}
             {view === "departments" && (selectedDept ? `Departments · ${selectedDept}` : "Departments")}
             {view === "roster" && "Roster"}
+            {view === "performance" && "My Performance"}
             {view === "account" && "Account"}
             {view === "profile" && selected && `Profile · ${selected.name}`}
           </div>
@@ -1620,7 +1634,7 @@ function App({ session, profile }) {
           </div>
         </div>
 
-        {view === "dashboard" && <Dashboard employees={employees} roleLabel={roleInfo.label} onNavigate={navigate} />}
+        {view === "dashboard" && <Dashboard employees={employees} roleLabel={roleInfo.label} onNavigate={navigate} showMine={isLeader} mine={me} />}
         {view === "departments" && (
           <DepartmentsView
             employees={employees} selectedDept={selectedDept}
@@ -1630,6 +1644,21 @@ function App({ session, profile }) {
         {view === "roster" && (
           <RosterTable employees={employees} onSelect={(id) => handleSelect(id, "roster")} isEditor={isEditor} onAdd={handleAddEmployee} />
         )}
+        {view === "performance" && (me
+          ? <ProfileView emp={me} editMode={false} onUpdate={() => {}} />
+          : (
+            <div className="page">
+              <div className="page-header">
+                <div>
+                  <h1>My Performance</h1>
+                  <p className="page-sub">Your own scores and feedback.</p>
+                </div>
+              </div>
+              <div className="leader-note">
+                Your login ({session.user.email}) isn't linked to an employee profile yet. Ask an admin to put this email in the Work Email field of your profile, and your own scores will show up here.
+              </div>
+            </div>
+          ))}
         {view === "account" && <AccountView email={session.user.email} role={profile.role} onSignOut={handleSignOut} />}
         {view === "profile" && selected && (
           <ProfileView emp={selected} editMode={editMode && selectedEditable} onUpdate={handleUpdate} onBack={() => setView(profileOrigin)}
@@ -2017,7 +2046,7 @@ const CSS = `
 .home-hero h1 span { color: var(--gold-300); }
 .home-hero p { margin: 0; font-size: 14.5px; color: rgba(255,255,255,0.75); }
 
-.nav-tile-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.nav-tile-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
 .nav-tile {
   display: flex; flex-direction: column; align-items: flex-start; gap: 10px; text-align: left; font-family: 'Inter', sans-serif;
   background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 20px; cursor: pointer;
